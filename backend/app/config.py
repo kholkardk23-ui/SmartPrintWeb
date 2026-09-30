@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # MySQL Database Configuration
-    DATABASE_URL: str = "mysql+pymysql://smartprint_user:YOUR_PASSWORD@localhost:3306/smartprint"
+    DATABASE_URL: str = ""
 
     # File Storage
     UPLOAD_DIR: str = "./uploads"
-    MAX_FILE_SIZE_MB: int = 10
+    MAX_FILE_SIZE_MB: int = 50
 
     # Pricing Configuration (Stage 2)
     BW_PRICE_PER_PAGE: float = 2.0
