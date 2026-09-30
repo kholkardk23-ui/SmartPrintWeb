@@ -51,3 +51,5 @@ frontend/.env
 Thumbs.db
 
 sample_document.pdf
+
+backend/test.pdf
