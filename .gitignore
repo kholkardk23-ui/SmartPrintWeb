@@ -1,0 +1,53 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+backend/venv/
+
+# Database
+*.db
+*.sqlite3
+backend/smartprint.db
+backend/mysql_data/
+
+# Uploaded files (keep .gitkeep)
+uploads/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node & Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+
+# Environment variables
+.env
+backend/.env
+frontend/.env
+
+# Editor & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+sample_document.pdf
