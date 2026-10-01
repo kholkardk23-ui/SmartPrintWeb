@@ -114,7 +114,7 @@ function handleApiError(error) {
       throw new Error(detail);
     }
     if (status === 413) {
-      throw new Error('One or more files exceed the 10 MB limit.');
+      throw new Error('One or more files exceed the 50 MB limit.');
     }
     if (status === 400) {
       throw new Error('Please upload valid PDF files.');
