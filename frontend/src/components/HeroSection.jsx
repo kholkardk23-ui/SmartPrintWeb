@@ -26,7 +26,7 @@ export default function HeroSection() {
           <FileText className="w-3.5 h-3.5 text-brand-600" /> PDF Format Only
         </span>
         <span className="flex items-center gap-1 bg-white px-3 py-1 rounded-full border border-slate-200/80 shadow-sm">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Max 10 MB per file
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Max 50 MB per file
         </span>
       </div>
     </section>
