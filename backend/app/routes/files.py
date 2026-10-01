@@ -142,7 +142,7 @@ async def process_single_pdf(file: UploadFile, db: Session) -> FileUploadRespons
     description="Validates, processes, and stores an uploaded PDF file, returning page count and metadata.",
 )
 async def upload_file(
-    file: UploadFile = File(..., description="PDF document (max 10 MB)"),
+    file: UploadFile = File(..., description="PDF document (max 50 MB)"),
     db: Session = Depends(get_db),
 ):
     """Handle a single customer PDF upload."""
@@ -158,7 +158,7 @@ async def upload_file(
 )
 async def upload_file_to_session(
     session_id: str,
-    file: UploadFile = File(..., description="PDF document (max 10 MB)"),
+    file: UploadFile = File(..., description="PDF document (max 50 MB)"),
     db: Session = Depends(get_db),
 ):
     """Upload a PDF and attach it to a specific printer session."""
@@ -237,7 +237,7 @@ async def get_uploaded_file(
         content_disposition_type="inline",
     )
 async def upload_multiple_files(
-    files: List[UploadFile] = File(..., description="Multiple PDF documents (max 10 MB each)"),
+    files: List[UploadFile] = File(..., description="Multiple PDF documents (max 50 MB each)"),
     db: Session = Depends(get_db),
 ):
     """Handle multiple customer PDF uploads in a single request."""
