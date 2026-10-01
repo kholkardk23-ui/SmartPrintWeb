@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileUp, AlertCircle, Loader2, FileText, X, Files } from 'lucide-react';
 
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB per file
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB per file
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -40,7 +40,7 @@ export default function FileUploader({
       }
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
-        errorItems.push(`"${file.name}" exceeds the 10 MB limit.`);
+        errorItems.push(`"${file.name}" exceeds the 50 MB limit.`);
         return;
       }
 
@@ -55,7 +55,7 @@ export default function FileUploader({
     if (errorItems.length > 0) {
       const msg =
         errorItems.length === 1
-          ? `Please select a valid PDF file (max 10 MB): ${errorItems[0]}`
+          ? `Please select a valid PDF file (max 50 MB): ${errorItems[0]}`
           : `Some files could not be uploaded:\n• ${errorItems.join('\n• ')}`;
       onFilesSelected(null, msg);
       return;
@@ -256,7 +256,7 @@ export default function FileUploader({
         )}
 
         <p className="text-xs text-slate-400 mt-5 pt-4 border-t border-slate-100">
-          PDF format only • Maximum file size: 10 MB
+          PDF format only • Maximum file size: 50 MB
         </p>
       </div>
 

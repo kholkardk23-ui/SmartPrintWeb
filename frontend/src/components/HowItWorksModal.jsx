@@ -10,7 +10,7 @@ const steps = [
   {
     icon: UploadCloud,
     title: '2. Upload Document',
-    desc: 'Upload your PDF document (up to 10 MB). Our server inspects and counts pages automatically.',
+    desc: 'Upload your PDF document (up to 50 MB). Our server inspects and counts pages automatically.',
   },
   {
     icon: CreditCard,
