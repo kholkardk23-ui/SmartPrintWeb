@@ -1,7 +1,7 @@
-
 import os
 import re
 from typing import List, Union
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,12 +20,12 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_FILE_SIZE_MB: int = 50
 
-    # Pricing Configuration (Stage 2)
+    # Pricing Configuration
     BW_PRICE_PER_PAGE: float = 2.0
     COLOR_PRICE_PER_PAGE: float = 5.0
     CURRENCY: str = "INR"
 
-    # Payment Configuration (Stage 3)
+    # Payment Configuration
     PAYMENT_ENABLED: bool = False
     UPI_ID: str = ""
     UPI_NAME: str = "SmartPrint"
@@ -38,9 +38,15 @@ class Settings(BaseSettings):
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+    def assemble_cors_origins(
+        cls, v: Union[str, List[str]]
+    ) -> List[str]:
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            return [
+                origin.strip()
+                for origin in v.split(",")
+                if origin.strip()
+            ]
         return v
 
     @property
@@ -49,8 +55,12 @@ class Settings(BaseSettings):
 
     @property
     def sanitized_database_url(self) -> str:
-        """Return the database connection URL with the password redacted for safe logging."""
-        return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self.DATABASE_URL)
+        """Return database URL with password hidden for safe logging."""
+        return re.sub(
+            r"://([^:]+):([^@]+)@",
+            r"://\1:***@",
+            self.DATABASE_URL,
+        )
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
@@ -61,5 +71,14 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Ensure uploads directory exists on disk
+# Railway may provide MYSQL_URL using mysql://.
+# SQLAlchemy should use PyMySQL explicitly.
+if settings.DATABASE_URL.startswith("mysql://"):
+    settings.DATABASE_URL = settings.DATABASE_URL.replace(
+        "mysql://",
+        "mysql+pymysql://",
+        1,
+    )
+
+# Ensure uploads directory exists on disk.
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
