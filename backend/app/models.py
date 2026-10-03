@@ -42,6 +42,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_number = Column(String(20), nullable=False, unique=True, index=True)
     file_id = Column(String(36), ForeignKey("files.id"), nullable=False, index=True)
     copies = Column(Integer, nullable=False, default=1)
     color_mode = Column(String(20), nullable=False, default="bw")  # 'bw' or 'color'
