@@ -1,5 +1,6 @@
 import uuid
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -15,6 +16,44 @@ from app.services.pricing_service import (
 logger = logging.getLogger("smartprint.orders")
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
+
+
+# ============================================================
+# GENERATE SHORT ORDER NUMBER
+# ============================================================
+
+def generate_order_number(db: Session) -> str:
+    """
+    Generate the next customer-facing SmartPrint order number.
+
+    Format:
+        SP-000001
+        SP-000002
+        SP-000003
+        ...
+    """
+
+    orders = (
+        db.query(Order.order_number)
+        .filter(Order.order_number.isnot(None))
+        .all()
+    )
+
+    highest_number = 0
+
+    for (order_number,) in orders:
+        if not order_number:
+            continue
+
+        match = re.fullmatch(r"SP-(\d+)", order_number)
+
+        if match:
+            number = int(match.group(1))
+            highest_number = max(highest_number, number)
+
+    next_number = highest_number + 1
+
+    return f"SP-{next_number:06d}"
 
 
 # ============================================================
@@ -53,7 +92,8 @@ def create_order(
     3. Validates color mode, copies, duplex, and page range.
     4. Computes selected pages and physical sheet count.
     5. Calculates authoritative price.
-    6. Persists order in MySQL with status OPTIONS_SELECTED.
+    6. Generates a short customer-facing order number.
+    7. Persists order with status OPTIONS_SELECTED.
     """
 
     # 1. Verify file exists
@@ -121,11 +161,14 @@ def create_order(
             detail=str(err),
         )
 
-    # 5. Create order
-    order_id = str(uuid.uuid4())
+    # 5. Generate IDs
+    internal_order_id = str(uuid.uuid4())
+    customer_order_number = generate_order_number(db)
 
+    # 6. Create order
     order = Order(
-        id=order_id,
+        id=internal_order_id,
+        order_number=customer_order_number,
         file_id=file_record.id,
         copies=pricing["copies"],
         color_mode=pricing["color_mode"],
@@ -144,7 +187,9 @@ def create_order(
     db.refresh(order)
 
     logger.info(
-        "Created order '%s' for file '%s': %d pages, %d copies, total %s %s",
+        "Created order '%s' (internal ID '%s') for file '%s': "
+        "%d pages, %d copies, total %s %s",
+        order.order_number,
         order.id,
         file_record.id,
         order.selected_page_count,
@@ -154,7 +199,7 @@ def create_order(
     )
 
     return OrderResponse(
-        order_id=order.id,
+        order_id=order.order_number,
         file_id=order.file_id,
         filename=file_record.original_filename,
         selected_page_count=order.selected_page_count,
@@ -219,7 +264,7 @@ def get_latest_order(
     )
 
     return OrderResponse(
-        order_id=order.id,
+        order_id=order.order_number,
         file_id=order.file_id,
         filename=filename,
         selected_page_count=order.selected_page_count,
@@ -273,7 +318,7 @@ def get_all_orders(
 
         result.append(
             OrderResponse(
-                order_id=order.id,
+                order_id=order.order_number,
                 file_id=order.file_id,
                 filename=filename,
                 selected_page_count=order.selected_page_count,
@@ -293,14 +338,14 @@ def get_all_orders(
 
 
 # ============================================================
-# GET ORDER BY ID
+# GET ORDER BY SHORT ORDER ID
 # ============================================================
 
 @router.get(
     "/{order_id}",
     response_model=OrderResponse,
     summary="Get order details by ID",
-    description="Retrieves the complete order summary for a given order ID.",
+    description="Retrieves the complete order summary using the short SmartPrint order ID.",
     responses={
         404: {
             "model": ErrorResponse,
@@ -313,21 +358,22 @@ def get_order(
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve order information by order_id.
+    Retrieve order information using the customer-facing
+    short order number.
 
-    Returns complete order summary including filename,
-    selected pages, copies, and total amount.
+    Example:
+        /api/orders/SP-000001
     """
 
     order = (
         db.query(Order)
-        .filter(Order.id == order_id)
+        .filter(Order.order_number == order_id)
         .first()
     )
 
     if not order:
         logger.warning(
-            "Order lookup failed: order_id '%s' not found.",
+            "Order lookup failed: order_number '%s' not found.",
             order_id,
         )
 
@@ -343,7 +389,7 @@ def get_order(
     )
 
     return OrderResponse(
-        order_id=order.id,
+        order_id=order.order_number,
         file_id=order.file_id,
         filename=filename,
         selected_page_count=order.selected_page_count,
