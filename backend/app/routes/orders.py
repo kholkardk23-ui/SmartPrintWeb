@@ -17,20 +17,37 @@ logger = logging.getLogger("smartprint.orders")
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
 
+# ============================================================
+# CREATE ORDER
+# ============================================================
+
 @router.post(
     "",
     response_model=OrderResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new print order",
-    description="Validates print configuration, authoritatively computes sheets & price, and creates order.",
+    description=(
+        "Validates print configuration, authoritatively computes "
+        "sheets & price, and creates order."
+    ),
     responses={
-        400: {"model": ErrorResponse, "description": "Invalid options or page range"},
-        404: {"model": ErrorResponse, "description": "File not found"},
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid options or page range",
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "File not found",
+        },
     },
 )
-def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
+def create_order(
+    request: OrderCreateRequest,
+    db: Session = Depends(get_db),
+):
     """
     Authoritative order creation endpoint:
+
     1. Verifies file_id exists in database.
     2. Reads actual page_count from database.
     3. Validates color mode, copies, duplex, and page range.
@@ -51,6 +68,7 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
             "Order creation failed: file_id '%s' not found.",
             request.file_id,
         )
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File with ID '{request.file_id}' not found.",
@@ -74,6 +92,7 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
             request.page_range,
             file_record.page_count,
         )
+
     except ValueError as err:
         logger.warning(
             "Invalid page range '%s' for file '%s': %s",
@@ -81,6 +100,7 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
             request.file_id,
             str(err),
         )
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(err),
@@ -94,6 +114,7 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
             color_mode=color_clean,
             duplex=request.duplex,
         )
+
     except ValueError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -149,20 +170,29 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
     )
 
 
+# ============================================================
+# GET LATEST ORDER
+# ============================================================
+
 @router.get(
     "/latest",
     response_model=OrderResponse,
     summary="Get the latest print order",
     description="Retrieves the most recently created print order.",
     responses={
-        404: {"model": ErrorResponse, "description": "No orders found"},
+        404: {
+            "model": ErrorResponse,
+            "description": "No orders found",
+        },
     },
 )
-def get_latest_order(db: Session = Depends(get_db)):
+def get_latest_order(
+    db: Session = Depends(get_db),
+):
     """
     Retrieve the most recently created order.
 
-    This endpoint will be used by the printer-side tablet
+    This endpoint can be used by the printer-side tablet
     to display the latest SmartPrint order.
     """
 
@@ -176,6 +206,7 @@ def get_latest_order(db: Session = Depends(get_db)):
         logger.warning(
             "Latest order lookup failed: no orders found."
         )
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No orders found.",
@@ -204,18 +235,86 @@ def get_latest_order(db: Session = Depends(get_db)):
     )
 
 
+# ============================================================
+# GET ALL ORDERS
+# ============================================================
+
+@router.get(
+    "",
+    response_model=list[OrderResponse],
+    summary="Get all print orders",
+    description="Retrieves all print orders, newest first.",
+)
+def get_all_orders(
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve all print orders, newest first.
+
+    This endpoint can be used by the mobile Orders page
+    and the printer-side tablet.
+    """
+
+    orders = (
+        db.query(Order)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
+
+    result = []
+
+    for order in orders:
+
+        filename = (
+            order.file.original_filename
+            if order.file
+            else "document.pdf"
+        )
+
+        result.append(
+            OrderResponse(
+                order_id=order.id,
+                file_id=order.file_id,
+                filename=filename,
+                selected_page_count=order.selected_page_count,
+                copies=order.copies,
+                color_mode=order.color_mode,
+                duplex=order.duplex,
+                page_range=order.page_range,
+                physical_sheet_count=order.physical_sheet_count,
+                price_per_page=float(order.price_per_page),
+                total_amount=float(order.total_amount),
+                currency=order.currency,
+                status=order.status,
+            )
+        )
+
+    return result
+
+
+# ============================================================
+# GET ORDER BY ID
+# ============================================================
+
 @router.get(
     "/{order_id}",
     response_model=OrderResponse,
     summary="Get order details by ID",
     description="Retrieves the complete order summary for a given order ID.",
     responses={
-        404: {"model": ErrorResponse, "description": "Order not found"},
+        404: {
+            "model": ErrorResponse,
+            "description": "Order not found",
+        },
     },
 )
-def get_order(order_id: str, db: Session = Depends(get_db)):
+def get_order(
+    order_id: str,
+    db: Session = Depends(get_db),
+):
     """
-    Retrieve order information by order_id:
+    Retrieve order information by order_id.
+
     Returns complete order summary including filename,
     selected pages, copies, and total amount.
     """
@@ -231,6 +330,7 @@ def get_order(order_id: str, db: Session = Depends(get_db)):
             "Order lookup failed: order_id '%s' not found.",
             order_id,
         )
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Order with ID '{order_id}' not found.",
