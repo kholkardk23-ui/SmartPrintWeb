@@ -1,5 +1,6 @@
 import uuid
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -37,10 +38,19 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
     5. Calculates authoritative price.
     6. Persists order in MySQL with status OPTIONS_SELECTED.
     """
+
     # 1. Verify file exists
-    file_record = db.query(FileRecord).filter(FileRecord.id == request.file_id).first()
+    file_record = (
+        db.query(FileRecord)
+        .filter(FileRecord.id == request.file_id)
+        .first()
+    )
+
     if not file_record:
-        logger.warning("Order creation failed: file_id '%s' not found.", request.file_id)
+        logger.warning(
+            "Order creation failed: file_id '%s' not found.",
+            request.file_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File with ID '{request.file_id}' not found.",
@@ -48,25 +58,35 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
 
     # 2. Validate color mode
     color_clean = request.color_mode.strip().lower()
+
     if color_clean not in ["bw", "color"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid color mode '{request.color_mode}'. Must be 'bw' or 'color'.",
+            detail=(
+                f"Invalid color mode '{request.color_mode}'. "
+                "Must be 'bw' or 'color'."
+            ),
         )
 
-    # 3. Parse and validate page range against authoritative page count
+    # 3. Parse and validate page range
     try:
         selected_pages = parse_and_validate_page_range(
-            request.page_range, file_record.page_count
+            request.page_range,
+            file_record.page_count,
         )
     except ValueError as err:
-        logger.warning("Invalid page range '%s' for file '%s': %s", request.page_range, request.file_id, str(err))
+        logger.warning(
+            "Invalid page range '%s' for file '%s': %s",
+            request.page_range,
+            request.file_id,
+            str(err),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(err),
         )
 
-    # 4. Authoritatively calculate pricing and sheets
+    # 4. Calculate pricing and physical sheets
     try:
         pricing = calculate_pricing(
             selected_page_count=len(selected_pages),
@@ -80,8 +100,9 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
             detail=str(err),
         )
 
-    # 5. Create Order in database
+    # 5. Create order
     order_id = str(uuid.uuid4())
+
     order = Order(
         id=order_id,
         file_id=file_record.id,
@@ -129,6 +150,61 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
 
 
 @router.get(
+    "/latest",
+    response_model=OrderResponse,
+    summary="Get the latest print order",
+    description="Retrieves the most recently created print order.",
+    responses={
+        404: {"model": ErrorResponse, "description": "No orders found"},
+    },
+)
+def get_latest_order(db: Session = Depends(get_db)):
+    """
+    Retrieve the most recently created order.
+
+    This endpoint will be used by the printer-side tablet
+    to display the latest SmartPrint order.
+    """
+
+    order = (
+        db.query(Order)
+        .order_by(Order.created_at.desc())
+        .first()
+    )
+
+    if not order:
+        logger.warning(
+            "Latest order lookup failed: no orders found."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No orders found.",
+        )
+
+    filename = (
+        order.file.original_filename
+        if order.file
+        else "document.pdf"
+    )
+
+    return OrderResponse(
+        order_id=order.id,
+        file_id=order.file_id,
+        filename=filename,
+        selected_page_count=order.selected_page_count,
+        copies=order.copies,
+        color_mode=order.color_mode,
+        duplex=order.duplex,
+        page_range=order.page_range,
+        physical_sheet_count=order.physical_sheet_count,
+        price_per_page=float(order.price_per_page),
+        total_amount=float(order.total_amount),
+        currency=order.currency,
+        status=order.status,
+    )
+
+
+@router.get(
     "/{order_id}",
     response_model=OrderResponse,
     summary="Get order details by ID",
@@ -140,17 +216,31 @@ def create_order(request: OrderCreateRequest, db: Session = Depends(get_db)):
 def get_order(order_id: str, db: Session = Depends(get_db)):
     """
     Retrieve order information by order_id:
-    Returns complete order summary including filename, selected pages, copies, and total amount.
+    Returns complete order summary including filename,
+    selected pages, copies, and total amount.
     """
-    order = db.query(Order).filter(Order.id == order_id).first()
+
+    order = (
+        db.query(Order)
+        .filter(Order.id == order_id)
+        .first()
+    )
+
     if not order:
-        logger.warning("Order lookup failed: order_id '%s' not found.", order_id)
+        logger.warning(
+            "Order lookup failed: order_id '%s' not found.",
+            order_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Order with ID '{order_id}' not found.",
         )
 
-    filename = order.file.original_filename if order.file else "document.pdf"
+    filename = (
+        order.file.original_filename
+        if order.file
+        else "document.pdf"
+    )
 
     return OrderResponse(
         order_id=order.id,
