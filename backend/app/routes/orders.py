@@ -6,31 +6,36 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import FileRecord, Order, OrderStatus
-from app.schemas import OrderCreateRequest, OrderResponse, ErrorResponse
+from app.models import FileRecord, Order, OrderFile, OrderStatus
+from app.schemas import (
+    OrderCreateRequest,
+    OrderResponse,
+    OrderDocumentResponse,
+    ErrorResponse,
+)
 from app.services.pricing_service import (
     parse_and_validate_page_range,
     calculate_pricing,
 )
 
-logger = logging.getLogger("smartprint.orders")
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
 
 
 # ============================================================
-# GENERATE SHORT ORDER NUMBER
+# ORDER NUMBER GENERATOR
 # ============================================================
 
 def generate_order_number(db: Session) -> str:
     """
-    Generate the next customer-facing SmartPrint order number.
+    Generate the next customer-facing order number.
 
     Format:
         SP-000001
         SP-000002
         SP-000003
-        ...
     """
 
     orders = (
@@ -45,15 +50,110 @@ def generate_order_number(db: Session) -> str:
         if not order_number:
             continue
 
-        match = re.fullmatch(r"SP-(\d+)", order_number)
+        match = re.fullmatch(r"SP-(\d+)", order_number.strip())
 
         if match:
             number = int(match.group(1))
             highest_number = max(highest_number, number)
 
-    next_number = highest_number + 1
+    return f"SP-{highest_number + 1:06d}"
 
-    return f"SP-{next_number:06d}"
+
+# ============================================================
+# RESPONSE HELPER
+# ============================================================
+
+def build_order_response(
+    order: Order,
+    db: Session,
+) -> OrderResponse:
+    """
+    Build an OrderResponse containing all PDFs belonging
+    to the order.
+
+    Supports both:
+      1. New multi-PDF orders using order_files
+      2. Old single-PDF orders using orders.file_id
+    """
+
+    documents = []
+
+    # --------------------------------------------------------
+    # New multi-PDF order
+    # --------------------------------------------------------
+
+    if order.order_files:
+        for order_file in order.order_files:
+
+            file_record = (
+                db.query(FileRecord)
+                .filter(FileRecord.id == order_file.file_id)
+                .first()
+            )
+
+            if not file_record:
+                continue
+
+            documents.append(
+                OrderDocumentResponse(
+                    file_id=file_record.id,
+                    filename=file_record.original_filename,
+                    page_count=file_record.page_count,
+                    selected_page_count=order_file.selected_page_count,
+                )
+            )
+
+    # --------------------------------------------------------
+    # Legacy single-PDF order
+    # --------------------------------------------------------
+
+    elif order.file_id:
+
+        file_record = (
+            db.query(FileRecord)
+            .filter(FileRecord.id == order.file_id)
+            .first()
+        )
+
+        if file_record:
+
+            documents.append(
+                OrderDocumentResponse(
+                    file_id=file_record.id,
+                    filename=file_record.original_filename,
+                    page_count=file_record.page_count,
+                    selected_page_count=order.selected_page_count,
+                )
+            )
+
+    # --------------------------------------------------------
+    # File IDs
+    # --------------------------------------------------------
+
+    file_ids = [
+        document.file_id
+        for document in documents
+    ]
+
+    # --------------------------------------------------------
+    # Return response
+    # --------------------------------------------------------
+
+    return OrderResponse(
+        order_id=order.order_number,
+        file_ids=file_ids,
+        documents=documents,
+        copies=order.copies,
+        color_mode=order.color_mode,
+        duplex=order.duplex,
+        page_range=order.page_range,
+        selected_page_count=order.selected_page_count,
+        physical_sheet_count=order.physical_sheet_count,
+        price_per_page=order.price_per_page,
+        total_amount=order.total_amount,
+        currency=order.currency,
+        status=order.status,
+    )
 
 
 # ============================================================
@@ -64,155 +164,230 @@ def generate_order_number(db: Session) -> str:
     "",
     response_model=OrderResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new print order",
-    description=(
-        "Validates print configuration, authoritatively computes "
-        "sheets & price, and creates order."
-    ),
     responses={
-        400: {
-            "model": ErrorResponse,
-            "description": "Invalid options or page range",
-        },
-        404: {
-            "model": ErrorResponse,
-            "description": "File not found",
-        },
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
     },
 )
 def create_order(
     request: OrderCreateRequest,
     db: Session = Depends(get_db),
 ):
-    """
-    Authoritative order creation endpoint:
-
-    1. Verifies file_id exists in database.
-    2. Reads actual page_count from database.
-    3. Validates color mode, copies, duplex, and page range.
-    4. Computes selected pages and physical sheet count.
-    5. Calculates authoritative price.
-    6. Generates a short customer-facing order number.
-    7. Persists order with status OPTIONS_SELECTED.
-    """
-
-    # 1. Verify file exists
-    file_record = (
-        db.query(FileRecord)
-        .filter(FileRecord.id == request.file_id)
-        .first()
-    )
-
-    if not file_record:
-        logger.warning(
-            "Order creation failed: file_id '%s' not found.",
-            request.file_id,
-        )
-
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"File with ID '{request.file_id}' not found.",
-        )
-
-    # 2. Validate color mode
-    color_clean = request.color_mode.strip().lower()
-
-    if color_clean not in ["bw", "color"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Invalid color mode '{request.color_mode}'. "
-                "Must be 'bw' or 'color'."
-            ),
-        )
-
-    # 3. Parse and validate page range
     try:
-        selected_pages = parse_and_validate_page_range(
-            request.page_range,
-            file_record.page_count,
-        )
 
-    except ValueError as err:
-        logger.warning(
-            "Invalid page range '%s' for file '%s': %s",
-            request.page_range,
-            request.file_id,
-            str(err),
-        )
+        # ----------------------------------------------------
+        # 1. Validate file IDs
+        # ----------------------------------------------------
 
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(err),
-        )
+        if not request.file_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one PDF file is required",
+            )
 
-    # 4. Calculate pricing and physical sheets
-    try:
-        pricing = calculate_pricing(
-            selected_page_count=len(selected_pages),
+        # Remove duplicate file IDs while preserving order
+        file_ids = list(dict.fromkeys(request.file_ids))
+
+        # ----------------------------------------------------
+        # 2. Load all files
+        # ----------------------------------------------------
+
+        file_records = []
+
+        for file_id in file_ids:
+
+            file_record = (
+                db.query(FileRecord)
+                .filter(FileRecord.id == file_id)
+                .first()
+            )
+
+            if not file_record:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"File not found: {file_id}",
+                )
+
+            file_records.append(file_record)
+
+        # ----------------------------------------------------
+        # 3. Validate and calculate pricing for every PDF
+        # ----------------------------------------------------
+
+        document_pricing = []
+
+        total_selected_pages = 0
+        total_physical_sheets = 0
+        total_amount = 0.0
+
+        price_per_page = None
+        currency = None
+
+        for file_record in file_records:
+
+            # ------------------------------------------------
+            # Validate page range
+            # ------------------------------------------------
+
+            try:
+                selected_pages = parse_and_validate_page_range(
+                    request.page_range,
+                    file_record.page_count,
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Invalid page range for "
+                        f"{file_record.original_filename}: {exc}"
+                    ),
+                )
+
+            selected_page_count = len(selected_pages)
+
+            # ------------------------------------------------
+            # Calculate pricing for this PDF
+            # ------------------------------------------------
+
+            try:
+                pricing = calculate_pricing(
+                    page_count=file_record.page_count,
+                    selected_page_count=selected_page_count,
+                    copies=request.copies,
+                    color_mode=request.color_mode,
+                    duplex=request.duplex,
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Pricing error for "
+                        f"{file_record.original_filename}: {exc}"
+                    ),
+                )
+
+            # ------------------------------------------------
+            # Save pricing information
+            # ------------------------------------------------
+
+            physical_sheet_count = pricing["physical_sheet_count"]
+            document_total = float(pricing["total_amount"])
+
+            total_selected_pages += selected_page_count
+            total_physical_sheets += physical_sheet_count
+            total_amount += document_total
+
+            if price_per_page is None:
+                price_per_page = float(pricing["price_per_page"])
+
+            if currency is None:
+                currency = pricing["currency"]
+
+            document_pricing.append(
+                {
+                    "file_record": file_record,
+                    "selected_page_count": selected_page_count,
+                    "physical_sheet_count": physical_sheet_count,
+                    "total_amount": document_total,
+                }
+            )
+
+        # ----------------------------------------------------
+        # 4. Generate IDs
+        # ----------------------------------------------------
+
+        internal_order_id = str(uuid.uuid4())
+        customer_order_number = generate_order_number(db)
+
+        # ----------------------------------------------------
+        # 5. Create main Order
+        # ----------------------------------------------------
+
+        order = Order(
+            id=internal_order_id,
+            order_number=customer_order_number,
+
+            # Keep legacy field populated with the first PDF.
+            # This preserves compatibility with older code/orders.
+            file_id=file_records[0].id,
+
             copies=request.copies,
-            color_mode=color_clean,
+            color_mode=request.color_mode,
             duplex=request.duplex,
+            page_range=request.page_range,
+
+            selected_page_count=total_selected_pages,
+            physical_sheet_count=total_physical_sheets,
+            price_per_page=price_per_page,
+            total_amount=total_amount,
+            currency=currency,
+
+            status=OrderStatus.CREATED,
         )
 
-    except ValueError as err:
+        db.add(order)
+
+        # ----------------------------------------------------
+        # 6. Create OrderFile rows
+        # ----------------------------------------------------
+
+        for index, item in enumerate(document_pricing):
+
+            file_record = item["file_record"]
+
+            order_file = OrderFile(
+                id=str(uuid.uuid4()),
+                order_id=internal_order_id,
+                file_id=file_record.id,
+                file_order=index + 1,
+                selected_page_count=item["selected_page_count"],
+                physical_sheet_count=item["physical_sheet_count"],
+                total_amount=item["total_amount"],
+            )
+
+            db.add(order_file)
+
+        # ----------------------------------------------------
+        # 7. Commit everything together
+        # ----------------------------------------------------
+
+        db.commit()
+        db.refresh(order)
+
+        logger.info(
+            "Multi-PDF order created successfully: %s | PDFs: %s | Total: %.2f %s",
+            order.order_number,
+            len(file_records),
+            total_amount,
+            currency,
+        )
+
+        # ----------------------------------------------------
+        # 8. Return response
+        # ----------------------------------------------------
+
+        return build_order_response(
+            order,
+            db,
+        )
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as exc:
+        db.rollback()
+
+        logger.exception(
+            "Failed to create order: %s",
+            exc,
+        )
+
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(err),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create order",
         )
-
-    # 5. Generate IDs
-    internal_order_id = str(uuid.uuid4())
-    customer_order_number = generate_order_number(db)
-
-    # 6. Create order
-    order = Order(
-        id=internal_order_id,
-        order_number=customer_order_number,
-        file_id=file_record.id,
-        copies=pricing["copies"],
-        color_mode=pricing["color_mode"],
-        duplex=pricing["duplex"],
-        page_range=request.page_range.strip(),
-        selected_page_count=pricing["selected_page_count"],
-        physical_sheet_count=pricing["physical_sheet_count"],
-        price_per_page=pricing["price_per_page"],
-        total_amount=pricing["total_amount"],
-        currency=pricing["currency"],
-        status=OrderStatus.OPTIONS_SELECTED.value,
-    )
-
-    db.add(order)
-    db.commit()
-    db.refresh(order)
-
-    logger.info(
-        "Created order '%s' (internal ID '%s') for file '%s': "
-        "%d pages, %d copies, total %s %s",
-        order.order_number,
-        order.id,
-        file_record.id,
-        order.selected_page_count,
-        order.copies,
-        order.total_amount,
-        order.currency,
-    )
-
-    return OrderResponse(
-        order_id=order.order_number,
-        file_id=order.file_id,
-        filename=file_record.original_filename,
-        selected_page_count=order.selected_page_count,
-        copies=order.copies,
-        color_mode=order.color_mode,
-        duplex=order.duplex,
-        page_range=order.page_range,
-        physical_sheet_count=order.physical_sheet_count,
-        price_per_page=float(order.price_per_page),
-        total_amount=float(order.total_amount),
-        currency=order.currency,
-        status=order.status,
-    )
 
 
 # ============================================================
@@ -222,61 +397,33 @@ def create_order(
 @router.get(
     "/latest",
     response_model=OrderResponse,
-    summary="Get the latest print order",
-    description="Retrieves the most recently created print order.",
-    responses={
-        404: {
-            "model": ErrorResponse,
-            "description": "No orders found",
-        },
-    },
 )
 def get_latest_order(
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve the most recently created order.
+    Return the highest customer-facing order number.
 
-    This endpoint can be used by the printer-side tablet
-    to display the latest SmartPrint order.
+    Example:
+        SP-000006
     """
 
     order = (
         db.query(Order)
-        .order_by(Order.created_at.desc())
+        .filter(Order.order_number.isnot(None))
+        .order_by(Order.order_number.desc())
         .first()
     )
 
     if not order:
-        logger.warning(
-            "Latest order lookup failed: no orders found."
-        )
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No orders found.",
+            detail="No orders found",
         )
 
-    filename = (
-        order.file.original_filename
-        if order.file
-        else "document.pdf"
-    )
-
-    return OrderResponse(
-        order_id=order.order_number,
-        file_id=order.file_id,
-        filename=filename,
-        selected_page_count=order.selected_page_count,
-        copies=order.copies,
-        color_mode=order.color_mode,
-        duplex=order.duplex,
-        page_range=order.page_range,
-        physical_sheet_count=order.physical_sheet_count,
-        price_per_page=float(order.price_per_page),
-        total_amount=float(order.total_amount),
-        currency=order.currency,
-        status=order.status,
+    return build_order_response(
+        order,
+        db,
     )
 
 
@@ -287,70 +434,47 @@ def get_latest_order(
 @router.get(
     "",
     response_model=list[OrderResponse],
-    summary="Get all print orders",
-    description="Retrieves all print orders, newest first.",
 )
 def get_all_orders(
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve all print orders, newest first.
+    Return ALL orders.
 
-    This endpoint can be used by the mobile Orders page
-    and the printer-side tablet.
+    Highest order number is ALWAYS FIRST.
+
+    Example:
+
+        SP-000006
+        SP-000005
+        SP-000004
+        SP-000003
+        SP-000002
+        SP-000001
     """
 
     orders = (
         db.query(Order)
-        .order_by(Order.created_at.desc())
+        .filter(Order.order_number.isnot(None))
+        .order_by(Order.order_number.desc())
         .all()
     )
 
-    result = []
-
-    for order in orders:
-
-        filename = (
-            order.file.original_filename
-            if order.file
-            else "document.pdf"
-        )
-
-        result.append(
-            OrderResponse(
-                order_id=order.order_number,
-                file_id=order.file_id,
-                filename=filename,
-                selected_page_count=order.selected_page_count,
-                copies=order.copies,
-                color_mode=order.color_mode,
-                duplex=order.duplex,
-                page_range=order.page_range,
-                physical_sheet_count=order.physical_sheet_count,
-                price_per_page=float(order.price_per_page),
-                total_amount=float(order.total_amount),
-                currency=order.currency,
-                status=order.status,
-            )
-        )
-
-    return result
+    return [
+        build_order_response(order, db)
+        for order in orders
+    ]
 
 
 # ============================================================
-# GET ORDER BY SHORT ORDER ID
+# GET ORDER BY ORDER NUMBER
 # ============================================================
 
 @router.get(
     "/{order_id}",
     response_model=OrderResponse,
-    summary="Get order details by ID",
-    description="Retrieves the complete order summary using the short SmartPrint order ID.",
     responses={
-        404: {
-            "model": ErrorResponse,
-            "description": "Order not found",
-        },
+        404: {"model": ErrorResponse},
     },
 )
 def get_order(
@@ -358,11 +482,10 @@ def get_order(
     db: Session = Depends(get_db),
 ):
     """
-    Retrieve order information using the customer-facing
-    short order number.
+    Get one order using customer-facing order number.
 
     Example:
-        /api/orders/SP-000001
+        /api/orders/SP-000006
     """
 
     order = (
@@ -372,34 +495,12 @@ def get_order(
     )
 
     if not order:
-        logger.warning(
-            "Order lookup failed: order_number '%s' not found.",
-            order_id,
-        )
-
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Order with ID '{order_id}' not found.",
+            detail="Order not found",
         )
 
-    filename = (
-        order.file.original_filename
-        if order.file
-        else "document.pdf"
-    )
-
-    return OrderResponse(
-        order_id=order.order_number,
-        file_id=order.file_id,
-        filename=filename,
-        selected_page_count=order.selected_page_count,
-        copies=order.copies,
-        color_mode=order.color_mode,
-        duplex=order.duplex,
-        page_range=order.page_range,
-        physical_sheet_count=order.physical_sheet_count,
-        price_per_page=float(order.price_per_page),
-        total_amount=float(order.total_amount),
-        currency=order.currency,
-        status=order.status,
+    return build_order_response(
+        order,
+        db,
     )
