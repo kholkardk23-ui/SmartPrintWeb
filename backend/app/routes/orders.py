@@ -251,13 +251,12 @@ def create_order(
             # ------------------------------------------------
 
             try:
-                pricing = calculate_pricing(
-                    page_count=file_record.page_count,
-                    selected_page_count=selected_page_count,
-                    copies=request.copies,
-                    color_mode=request.color_mode,
-                    duplex=request.duplex,
-                )
+              pricing = calculate_pricing(
+              selected_page_count=selected_page_count,
+              copies=request.copies,
+              color_mode=request.color_mode,
+              duplex=request.duplex,
+)
             except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
