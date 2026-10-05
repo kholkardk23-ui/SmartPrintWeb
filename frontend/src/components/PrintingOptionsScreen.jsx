@@ -252,12 +252,12 @@ export default function PrintingOptionsScreen({
     }
 
     const payload = {
-      file_id: activeFile.file_id,
-      copies: Number(copies),
-      color_mode: colorMode,
-      duplex: Boolean(duplex),
-      page_range: pageRangeType === 'all' ? 'all' : customRange.trim(),
-    };
+  file_ids: files.map((file) => file.file_id),
+  copies: Number(copies),
+  color_mode: colorMode,
+  duplex: Boolean(duplex),
+  page_range: pageRangeType === 'all' ? 'all' : customRange.trim(),
+};
 
     setIsCreatingOrder(true);
 

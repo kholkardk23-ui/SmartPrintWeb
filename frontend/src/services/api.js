@@ -1,178 +1,123 @@
-import axios from 'axios';
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import axios from "axios";
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_URL || "",
   timeout: 60000,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-// ============================================================
-// HEALTH
-// ============================================================
-
-export const checkHealth = async () => {
-  const response = await api.get('/health');
-  return response.data;
-};
-
-// ============================================================
-// SINGLE FILE UPLOAD
-// ============================================================
-
-export const uploadFile = async (file, onProgress) => {
+// Upload one PDF
+export const uploadFile = async (file, sessionId = null) => {
   const formData = new FormData();
+  formData.append("file", file);
 
-  formData.append('file', file);
+  const url = sessionId
+    ? `/files/upload/${sessionId}`
+    : "/files/upload";
 
-  const response = await api.post('/files/upload', formData, {
+  const response = await api.post(url, formData, {
     headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-
-    onUploadProgress: (progressEvent) => {
-      if (!onProgress || !progressEvent.total) return;
-
-      const percent = Math.round(
-        (progressEvent.loaded * 100) / progressEvent.total
-      );
-
-      onProgress(percent);
+      "Content-Type": "multipart/form-data",
     },
   });
 
   return response.data;
 };
 
-// ============================================================
-// MULTIPLE FILE UPLOAD
-// ============================================================
-
-export const uploadMultipleFiles = async (files, onProgress) => {
+// Upload multiple PDFs
+export const uploadMultipleFiles = async (files, sessionId = null) => {
   const formData = new FormData();
 
   files.forEach((file) => {
-    formData.append('files', file);
+    formData.append("files", file);
   });
 
-  const response = await api.post(
-    '/files/upload-multiple',
-    formData,
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+  const url = sessionId
+    ? `/files/upload-multiple/${sessionId}`
+    : "/files/upload-multiple";
 
-      onUploadProgress: (progressEvent) => {
-        if (!onProgress || !progressEvent.total) return;
+  const response = await api.post(url, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
 
-        const percent = Math.round(
-          (progressEvent.loaded * 100) / progressEvent.total
-        );
+  return response.data;
+};
 
-        onProgress(percent);
-      },
+// Compatibility function for the previous SmartPrint design
+export const uploadDocuments = async (files, onProgress = null) => {
+  try {
+    const result = await uploadMultipleFiles(files);
+
+    // Support different backend response formats
+    let uploadedFiles = [];
+
+    if (Array.isArray(result)) {
+      uploadedFiles = result;
+    } else if (Array.isArray(result?.files)) {
+      uploadedFiles = result.files;
+    } else if (Array.isArray(result?.data)) {
+      uploadedFiles = result.data;
+    } else if (result) {
+      uploadedFiles = [result];
     }
-  );
+
+    if (onProgress) {
+      onProgress(100);
+    }
+
+    return uploadedFiles;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Create order
+export const createOrder = async (orderData) => {
+  console.log("Sending order data:", orderData);
+
+  const response = await api.post("/orders", orderData);
 
   return response.data;
 };
 
-// ============================================================
-// DOCUMENT UPLOAD HELPER
-// ============================================================
-
-export const uploadDocuments = async (files, onProgress) => {
-  if (!files || files.length === 0) {
-    throw new Error('No PDF files selected.');
-  }
-
-  if (files.length === 1) {
-    const result = await uploadFile(files[0], onProgress);
-
-    return [result];
-  }
-
-  return await uploadMultipleFiles(files, onProgress);
-};
-
-// ============================================================
-// CREATE ORDER
-// ============================================================
-
-export const createOrder = async ({
-  fileIds,
-  copies = 1,
-  colorMode = 'bw',
-  duplex = false,
-  pageRange = 'all',
-}) => {
-  const response = await api.post('/orders', {
-    file_ids: fileIds,
-    copies,
-    color_mode: colorMode,
-    duplex,
-    page_range: pageRange,
-  });
+// Get all orders
+export const getOrders = async () => {
+  const response = await api.get("/orders");
 
   return response.data;
 };
 
-// ============================================================
-// GET ORDER
-// ============================================================
-
+// Get single order
 export const getOrder = async (orderId) => {
   const response = await api.get(`/orders/${orderId}`);
 
   return response.data;
 };
 
-// ============================================================
-// GET LATEST ORDERS
-// ============================================================
-
-export const getLatestOrders = async () => {
-  const response = await api.get('/orders/latest');
+// Backend health check
+export const healthCheck = async () => {
+  const response = await api.get("/health");
 
   return response.data;
 };
 
-// ============================================================
-// GET ALL ORDERS
-// ============================================================
+// Compatibility alias used by the old polished App.jsx
+export const checkHealth = healthCheck;
 
-export const getAllOrders = async () => {
-  const response = await api.get('/orders');
-
-  return response.data;
+// Default API object
+const apiService = {
+  uploadFile,
+  uploadMultipleFiles,
+  uploadDocuments,
+  createOrder,
+  getOrders,
+  getOrder,
+  healthCheck,
+  checkHealth,
 };
 
-// ============================================================
-// PAYMENT
-// ============================================================
-
-export const startPayment = async (orderId) => {
-  const response = await api.post(
-    `/payments/${orderId}/start`
-  );
-
-  return response.data;
-};
-
-export const verifyPayment = async (
-  orderId,
-  paymentReference
-) => {
-  const response = await api.post(
-    `/payments/${orderId}/verify`,
-    {
-      payment_reference: paymentReference,
-    }
-  );
-
-  return response.data;
-};
-
-export default api;
+export default apiService;
