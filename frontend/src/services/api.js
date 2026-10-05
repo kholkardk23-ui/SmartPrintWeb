@@ -14,8 +14,8 @@ export const uploadFile = async (file, sessionId = null) => {
   formData.append("file", file);
 
   const url = sessionId
-    ? `/files/upload/${sessionId}`
-    : "/files/upload";
+    ? `/api/files/upload/${sessionId}`
+    : "/api/files/upload";
 
   const response = await api.post(url, formData, {
     headers: {
@@ -35,8 +35,8 @@ export const uploadMultipleFiles = async (files, sessionId = null) => {
   });
 
   const url = sessionId
-    ? `/files/upload-multiple/${sessionId}`
-    : "/files/upload-multiple";
+    ? `/api/files/upload-multiple/${sessionId}`
+    : "/api/files/upload-multiple";
 
   const response = await api.post(url, formData, {
     headers: {
@@ -52,7 +52,6 @@ export const uploadDocuments = async (files, onProgress = null) => {
   try {
     const result = await uploadMultipleFiles(files);
 
-    // Support different backend response formats
     let uploadedFiles = [];
 
     if (Array.isArray(result)) {
@@ -79,28 +78,28 @@ export const uploadDocuments = async (files, onProgress = null) => {
 export const createOrder = async (orderData) => {
   console.log("Sending order data:", orderData);
 
-  const response = await api.post("/orders", orderData);
+  const response = await api.post("/api/orders", orderData);
 
   return response.data;
 };
 
 // Get all orders
 export const getOrders = async () => {
-  const response = await api.get("/orders");
+  const response = await api.get("/api/orders");
 
   return response.data;
 };
 
 // Get single order
 export const getOrder = async (orderId) => {
-  const response = await api.get(`/orders/${orderId}`);
+  const response = await api.get(`/api/orders/${orderId}`);
 
   return response.data;
 };
 
 // Backend health check
 export const healthCheck = async () => {
-  const response = await api.get("/health");
+  const response = await api.get("/api/health");
 
   return response.data;
 };
