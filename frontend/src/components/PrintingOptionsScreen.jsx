@@ -197,7 +197,7 @@ export default function PrintingOptionsScreen({
   }, [pageRangeType, totalDocPages, customRangeValidation]);
 
   // Pricing constants (INR per page)
-  const pricePerPage = colorMode === 'color' ? 5.0 : 2.0;
+  const pricePerPage = colorMode === 'color' ? 10.0 : 3.0;
 
   // Estimated physical sheets calculation:
   // Single side: pages * copies
