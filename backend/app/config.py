@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 50
 
     # Pricing Configuration
-    BW_PRICE_PER_PAGE: float = 2.0
-    COLOR_PRICE_PER_PAGE: float = 5.0
+    BW_PRICE_PER_PAGE: float = 3.0
+    COLOR_PRICE_PER_PAGE: float = 10.0
     CURRENCY: str = "INR"
 
     # Payment Configuration
