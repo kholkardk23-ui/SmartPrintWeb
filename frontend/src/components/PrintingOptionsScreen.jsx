@@ -568,7 +568,7 @@ export default function PrintingOptionsScreen({
               <div className="flex items-center justify-between">
                 <span className="font-bold text-sm text-slate-900">Black & White</span>
                 <span className="text-xs font-bold text-slate-700 bg-slate-200/80 px-2 py-0.5 rounded-full">
-                  ₹2 / page
+                  ₹3 / page
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">Standard grayscale monochrome print</p>
@@ -591,7 +591,7 @@ export default function PrintingOptionsScreen({
               <div className="flex items-center justify-between">
                 <span className="font-bold text-sm text-slate-900">Color</span>
                 <span className="text-xs font-bold text-brand-700 bg-brand-100 px-2 py-0.5 rounded-full">
-                  ₹5 / page
+                  ₹10 / page
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">Vibrant high-resolution color print</p>
@@ -680,7 +680,7 @@ export default function PrintingOptionsScreen({
             <div className="flex justify-between text-slate-300">
               <span>Color Mode:</span>
               <span className="font-semibold text-white">
-                {colorMode === 'bw' ? 'Black & White (₹2/page)' : 'Color (₹5/page)'}
+                {colorMode === 'bw' ? 'Black & White (₹3/page)' : 'Color (₹10/page)'}
               </span>
             </div>
 
