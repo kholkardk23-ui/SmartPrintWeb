@@ -408,11 +408,15 @@ def get_latest_order(
     """
 
     order = (
-        db.query(Order)
-        .filter(Order.order_number.isnot(None))
-        .order_by(Order.order_number.desc())
-        .first()
-    )
+db.query(Order)
+.filter(Order.order_number.isnot(None))
+.order_by(
+Order.created_at.desc(),
+Order.order_number.desc()
+)
+.first()
+)
+
 
     if not order:
         raise HTTPException(
@@ -453,11 +457,15 @@ def get_all_orders(
     """
 
     orders = (
-        db.query(Order)
-        .filter(Order.order_number.isnot(None))
-        .order_by(Order.order_number.desc())
-        .all()
-    )
+db.query(Order)
+.filter(Order.order_number.isnot(None))
+.order_by(
+Order.created_at.desc(),
+Order.order_number.desc()
+)
+.all()
+)
+
 
     return [
         build_order_response(order, db)
