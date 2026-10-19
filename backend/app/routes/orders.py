@@ -407,14 +407,11 @@ def get_latest_order(
         SP-000006
     """
 
-    order = (
-db.query(Order)
-.filter(Order.order_number.isnot(None))
-.order_by(
-Order.created_at.desc(),
-Order.order_number.desc()
-)
-.first()
+order = (
+    db.query(Order)
+    .filter(Order.order_number.isnot(None))
+    .order_by(Order.order_number.desc())
+    .first()
 )
 
 
@@ -456,14 +453,11 @@ def get_all_orders(
         SP-000001
     """
 
-    orders = (
-db.query(Order)
-.filter(Order.order_number.isnot(None))
-.order_by(
-Order.created_at.desc(),
-Order.order_number.desc()
-)
-.all()
+orders = (
+    db.query(Order)
+    .filter(Order.order_number.isnot(None))
+    .order_by(Order.order_number.desc())
+    .all()
 )
 
 
