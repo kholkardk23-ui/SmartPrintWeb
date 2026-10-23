@@ -83,11 +83,25 @@ export const createOrder = async (orderData) => {
   return response.data;
 };
 
-// Get all orders
+// Get all orders — newest order number first
 export const getOrders = async () => {
   const response = await api.get("/api/orders");
 
-  return response.data;
+  const orders = response.data;
+
+  if (!Array.isArray(orders)) {
+    return orders;
+  }
+
+  return [...orders].sort((a, b) => {
+    const orderA = a.order_number || "";
+    const orderB = b.order_number || "";
+
+    return orderB.localeCompare(orderA, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
 };
 
 // Get single order
