@@ -1410,3 +1410,840 @@ font-size: 9px;
   font-weight: 800;
   letter-spacing: 1px;
 }
+
+/* Portrait layout for SmartPrint tablet */
+.tablet-dashboard.tablet-welcome {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 20px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text,
+.tablet-dashboard.tablet-welcome .tablet-qr-card {
+  width: 100%;
+  max-width: 520px;
+  box-sizing: border-box;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+  width: min(260px, 65vw);
+  height: auto;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-footer {
+  margin-top: auto;
+  width: 100%;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-group-members {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+  text-align: center;
+  font-size: 11px;
+}
+
+/* Disable landscape-specific welcome layout */
+@media (orientation: landscape) {
+  .tablet-dashboard.tablet-welcome .tablet-welcome-content {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Compact portrait layout - no scrolling */
+.tablet-dashboard.tablet-welcome {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 14px;
+  box-sizing: border-box;
+  gap: 6px;
+}
+
+/* Reduce header height */
+.tablet-dashboard.tablet-welcome .tablet-header {
+  padding: 6px 0;
+  flex-shrink: 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand-icon {
+  font-size: 26px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand h1 {
+  font-size: 22px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand p {
+  font-size: 11px;
+  margin: 2px 0 0;
+}
+
+/* Stack instructions and QR vertically */
+.tablet-dashboard.tablet-welcome .tablet-welcome-content {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text {
+  width: 100%;
+  max-width: 420px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-eyebrow {
+  font-size: 10px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text h2 {
+  font-size: clamp(22px, 4vh, 30px);
+  line-height: 1.1;
+  margin: 4px 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text > p {
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 5px 0;
+}
+
+/* Compact steps */
+.tablet-dashboard.tablet-welcome .tablet-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step {
+  padding: 4px 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step strong {
+  font-size: 12px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step small {
+  font-size: 10px;
+}
+
+/* Compact QR card */
+.tablet-dashboard.tablet-welcome .tablet-qr-card {
+  width: 100%;
+  max-width: 340px;
+  padding: 10px;
+  flex-shrink: 1;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-heading {
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+  display: block;
+  width: clamp(120px, 22vh, 180px);
+  height: auto;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-card h3 {
+  font-size: 14px;
+  margin: 5px 0 2px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-card p {
+  font-size: 10px;
+  margin: 3px 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-open-link {
+  font-size: 11px;
+  padding: 5px 8px;
+}
+
+/* Footer and group members */
+.tablet-dashboard.tablet-welcome .tablet-welcome-footer {
+  flex-shrink: 0;
+  width: 100%;
+  margin-top: 0;
+  padding: 5px 0;
+  gap: 4px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-footer-status {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 9px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-group-members {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 10px;
+  width: 100%;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-members-title {
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+/* Keep the welcome screen portrait-style even in landscape */
+@media (orientation: landscape) {
+  .tablet-dashboard.tablet-welcome .tablet-welcome-content {
+    flex-direction: column;
+  }
+}
+
+/* =========================================
+   SMARTPRINT - COMPACT PORTRAIT WELCOME
+   ========================================= */
+
+.tablet-dashboard.tablet-welcome {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 12px 18px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* HEADER */
+.tablet-dashboard.tablet-welcome .tablet-header {
+  flex: 0 0 auto;
+  padding: 4px 0 10px;
+  margin: 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand-icon {
+  font-size: 28px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand h1 {
+  font-size: 25px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand p {
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+/* MAIN CONTENT */
+.tablet-dashboard.tablet-welcome .tablet-welcome-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  justify-items: center;
+  align-content: stretch;
+  gap: 10px;
+  overflow: hidden;
+}
+
+/* INTRODUCTION */
+.tablet-dashboard.tablet-welcome .tablet-welcome-text {
+  width: 100%;
+  max-width: 600px;
+  min-height: 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text h2 {
+  font-size: clamp(23px, 3.2vh, 32px);
+  line-height: 1.08;
+  margin: 7px 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text > p {
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 6px 0;
+  max-width: 560px;
+}
+
+/* INSTRUCTION STEPS */
+.tablet-dashboard.tablet-welcome .tablet-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step > span {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.3;
+  margin-top: 3px;
+}
+
+/* QR CARD */
+.tablet-dashboard.tablet-welcome .tablet-qr-card {
+  width: 100%;
+  max-width: 440px;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-heading {
+  flex: 0 0 auto;
+  font-size: 11px;
+  letter-spacing: 2px;
+  margin: 0 0 4px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-code {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+  display: block;
+  width: clamp(130px, 19vh, 190px);
+  height: auto;
+  max-width: 100%;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-card h3 {
+  flex: 0 0 auto;
+  font-size: 14px;
+  margin: 2px 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-card p {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-align: center;
+  margin: 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-open-link {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 6px 10px;
+  margin-top: 3px;
+}
+
+/* FOOTER */
+.tablet-dashboard.tablet-welcome .tablet-welcome-footer {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 6px 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-sizing: border-box;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-footer-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-group-members {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  width: 100%;
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-members-title {
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+/* SMALLER PORTRAIT SCREENS */
+@media (max-height: 800px) {
+  .tablet-dashboard.tablet-welcome {
+    padding: 8px 14px 6px;
+    gap: 5px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-header {
+    padding-bottom: 6px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-content {
+    gap: 6px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-text h2 {
+    font-size: 23px;
+    margin: 5px 0;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-text > p {
+    margin: 4px 0;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-steps {
+    gap: 2px;
+    margin-top: 5px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-step > span {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-qr-card {
+    padding: 7px 10px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+    width: clamp(115px, 17vh, 155px);
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-footer {
+    padding-top: 4px;
+    gap: 3px;
+  }
+}
+
+/* VERY SHORT SCREENS */
+@media (max-height: 650px) {
+  .tablet-dashboard.tablet-welcome .tablet-welcome-text h2 {
+    font-size: 20px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-text > p {
+    font-size: 11px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-step > span {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    font-size: 15px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-step small {
+    font-size: 9px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+    width: 110px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-group-members {
+    font-size: 9px;
+  }
+}
+/* =========================================================
+   FINAL PORTRAIT FIT — SmartPrint welcome screen
+   Keeps QR, instructions, status and project team on-screen.
+   Order-details styles are intentionally left unchanged.
+   ========================================================= */
+
+.tablet-dashboard.tablet-welcome {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: clamp(8px, 1.6vh, 16px) clamp(12px, 2.5vw, 22px) 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-header {
+  flex: 0 0 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 8px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand {
+  min-width: 0;
+  gap: 9px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  font-size: 23px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand h1 {
+  font-size: clamp(19px, 3.2vw, 25px);
+  line-height: 1.08;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-brand p {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-connection {
+  flex: 0 0 auto;
+  gap: 7px;
+  padding: 8px 10px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-connection-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2px 0 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-evenly;
+  gap: clamp(6px, 1.1vh, 10px);
+  overflow: hidden;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-eyebrow {
+  margin: 0 0 5px;
+  font-size: 10px;
+  letter-spacing: 1.8px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text h2 {
+  margin: 0;
+  font-size: clamp(24px, 4.2vh, 34px);
+  line-height: 1.04;
+  letter-spacing: -1px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-text > p {
+  max-width: 620px;
+  margin: 6px 0 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  margin: 0;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step {
+  min-width: 0;
+  gap: 9px;
+  align-items: center;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step > span {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 11px;
+  font-size: 15px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step strong {
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-step small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-card {
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 440px;
+  min-height: 0;
+  height: auto;
+  margin: 0 auto;
+  padding: 8px 10px;
+  gap: 4px;
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-heading {
+  flex: 0 0 auto;
+  margin: 0 0 3px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-code {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  padding: 6px;
+  border-radius: 13px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+  display: block;
+  width: clamp(112px, 17vh, 150px);
+  height: auto;
+  max-width: 100%;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-card h3 {
+  flex: 0 0 auto;
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-qr-card > p {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-open-link {
+  flex: 0 0 auto;
+  min-height: 30px;
+  margin-top: 3px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 10px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-welcome-footer {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  border-top: 1px solid var(--sp-border);
+  font-size: 9px;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-footer-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-group-members {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  width: 100%;
+  padding: 0 0 2px;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.tablet-dashboard.tablet-welcome .tablet-members-title {
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+/* Short portrait viewport: shrink spacing and QR, not the page */
+@media (max-height: 760px) {
+  .tablet-dashboard.tablet-welcome {
+    padding-top: 6px;
+    gap: 4px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-header {
+    padding-bottom: 5px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-content {
+    gap: 5px;
+    padding: 0;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-eyebrow {
+    margin-bottom: 3px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-text h2 {
+    font-size: clamp(22px, 3.7vh, 28px);
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-text > p {
+    margin: 4px 0 5px;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-steps {
+    gap: 3px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-step > span {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-qr-card {
+    padding: 6px 8px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+    width: clamp(100px, 15vh, 125px);
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-footer {
+    padding-top: 4px;
+    gap: 3px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-group-members {
+    font-size: 9px;
+    gap: 2px 8px;
+  }
+}
+
+/* Narrow portrait browser/device */
+@media (max-width: 600px) and (orientation: portrait) {
+  .tablet-dashboard.tablet-welcome {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-welcome-text h2 {
+    font-size: clamp(23px, 5.2vw, 30px);
+    letter-spacing: -0.8px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-qr-card {
+    max-width: 100%;
+  }
+}
+
+/* Very short viewport fallback */
+@media (max-height: 620px) {
+  .tablet-dashboard.tablet-welcome .tablet-qr-code svg {
+    width: 96px;
+  }
+
+  .tablet-dashboard.tablet-welcome .tablet-qr-card h3,
+  .tablet-dashboard.tablet-welcome .tablet-qr-card > p,
+  .tablet-dashboard.tablet-welcome .tablet-open-link {
+    display: none;
+  }
+}
