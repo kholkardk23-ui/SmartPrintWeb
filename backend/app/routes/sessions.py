@@ -13,16 +13,29 @@ router = APIRouter(
 )
 
 
+# These statuses mean the customer still owns the printer session.
+ACTIVE_SESSION_STATUSES = [
+    "WAITING_FOR_UPLOAD",
+    "FILE_UPLOADED",
+    "OPTIONS_SELECTED",
+    "PAYMENT_PENDING",
+    "PAID",
+    "QUEUED",
+    "PRINTING",
+]
+
+
 @router.post("/{machine_code}")
 def create_printer_session(
     machine_code: str,
     db: Session = Depends(get_db),
 ):
-    """Create a new customer upload session for a specific printer."""
+    """Allow only one active customer session per printer."""
 
     printer = (
         db.query(Printer)
         .filter(Printer.machine_code == machine_code)
+        .with_for_update()
         .first()
     )
 
@@ -38,6 +51,26 @@ def create_printer_session(
             detail="Printer is inactive.",
         )
 
+    # Prevent a second customer from starting while the printer
+    # already has an active customer session.
+    active_session = (
+        db.query(PrinterSession)
+        .filter(
+            PrinterSession.printer_id == printer.id,
+            PrinterSession.status.in_(ACTIVE_SESSION_STATUSES),
+        )
+        .first()
+    )
+
+    if active_session:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "SmartPrint is currently busy with another customer. "
+                "Please wait until the current order is completed."
+            ),
+        )
+
     session = PrinterSession(
         id=str(uuid.uuid4()),
         printer_id=printer.id,
@@ -46,8 +79,16 @@ def create_printer_session(
     )
 
     db.add(session)
-    db.commit()
-    db.refresh(session)
+
+    try:
+        db.commit()
+        db.refresh(session)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Could not create printer session. Please try again.",
+        )
 
     return {
         "session_id": session.id,
@@ -55,12 +96,14 @@ def create_printer_session(
         "printer_name": printer.name,
         "status": session.status,
     }
+
+
 @router.get("/{session_id}")
 def get_printer_session(
     session_id: str,
     db: Session = Depends(get_db),
 ):
-    """Get the current status and uploaded file information for a printer session."""
+    """Get session status and uploaded file information."""
 
     session = (
         db.query(PrinterSession)
@@ -80,7 +123,6 @@ def get_printer_session(
         "file_id": session.file_id,
     }
 
-    # Add file information when a file has been uploaded.
     if session.file_id:
         file_record = (
             db.query(FileRecord)
