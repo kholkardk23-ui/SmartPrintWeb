@@ -1120,3 +1120,293 @@
     font-size: 10px;
   }
 }
+
+/* =========================================
+SMARTPRINT QR WELCOME SCREEN
+Single-screen layout + project team footer
+========================================= */
+
+.tablet-dashboard.tablet-welcome {
+box-sizing: border-box;
+width: 100%;
+height: 100vh;
+height: 100dvh;
+min-height: 0;
+overflow: hidden;
+padding: 12px 28px 8px;
+display: flex;
+flex-direction: column;
+gap: 8px;
+}
+
+.tablet-welcome,
+.tablet-welcome * {
+box-sizing: border-box;
+}
+
+/* Header */
+.tablet-welcome .tablet-header {
+flex: 0 0 auto;
+padding-bottom: 8px;
+margin: 0;
+}
+
+.tablet-welcome .tablet-brand-icon {
+width: 42px;
+height: 42px;
+font-size: 22px;
+}
+
+.tablet-welcome .tablet-brand h1 {
+font-size: 21px;
+}
+
+.tablet-welcome .tablet-brand p {
+font-size: 11px;
+margin-top: 2px;
+}
+
+/* Main welcome section */
+.tablet-welcome .tablet-welcome-content {
+flex: 1 1 auto;
+min-height: 0;
+width: 100%;
+max-width: 1150px;
+margin: 0 auto;
+padding: 8px 0;
+display: grid;
+grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+align-items: center;
+gap: 24px;
+}
+
+/* Left side instructions */
+.tablet-welcome .tablet-welcome-text {
+min-width: 0;
+}
+
+.tablet-welcome .tablet-welcome-text h2 {
+font-size: clamp(25px, 3vw, 38px);
+line-height: 1.15;
+margin: 8px 0;
+}
+
+.tablet-welcome .tablet-welcome-text > p {
+font-size: 13px;
+line-height: 1.5;
+margin: 8px 0 12px;
+}
+
+.tablet-welcome .tablet-steps {
+gap: 8px;
+margin-top: 12px;
+}
+
+.tablet-welcome .tablet-step {
+padding: 8px 10px;
+gap: 10px;
+}
+
+.tablet-welcome .tablet-step strong {
+font-size: 12px;
+}
+
+.tablet-welcome .tablet-step small {
+font-size: 10px;
+}
+
+/* Right side QR card */
+.tablet-welcome .tablet-qr-card {
+min-width: 0;
+width: 100%;
+max-width: 390px;
+justify-self: center;
+padding: 14px 16px;
+gap: 8px;
+}
+
+.tablet-welcome .tablet-qr-heading {
+font-size: 11px;
+margin-bottom: 2px;
+}
+
+.tablet-welcome .tablet-qr-code {
+padding: 8px;
+}
+
+.tablet-welcome .tablet-qr-code svg {
+display: block;
+width: min(220px, 42vh, 48vw);
+height: auto;
+}
+
+.tablet-welcome .tablet-qr-card h3 {
+font-size: 16px;
+margin: 3px 0;
+}
+
+.tablet-welcome .tablet-qr-card p {
+font-size: 11px;
+line-height: 1.4;
+margin: 0;
+}
+
+.tablet-welcome .tablet-open-link {
+padding: 9px 12px;
+font-size: 11px;
+margin-top: 3px;
+}
+
+/* Footer and project team */
+.tablet-welcome .tablet-footer.tablet-welcome-footer {
+flex: 0 0 auto;
+width: 100%;
+margin: 0;
+padding: 8px 0 0;
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 6px;
+text-align: center;
+}
+
+.tablet-welcome-footer .tablet-footer-status {
+width: 100%;
+display: flex;
+justify-content: space-between;
+align-items: center;
+gap: 8px;
+font-size: 10px;
+}
+
+.tablet-welcome-footer .tablet-group-members {
+width: 100%;
+display: flex;
+justify-content: center;
+align-items: center;
+flex-wrap: wrap;
+column-gap: 16px;
+row-gap: 4px;
+font-size: 11px;
+line-height: 1.3;
+}
+
+.tablet-welcome-footer .tablet-members-title {
+font-weight: 800;
+letter-spacing: 1px;
+}
+
+/* Landscape tablet with limited vertical space */
+@media (min-width: 761px) and (max-height: 800px) {
+.tablet-dashboard.tablet-welcome {
+padding: 7px 20px 5px;
+gap: 4px;
+}
+
+.tablet-welcome .tablet-welcome-content {
+padding: 4px 0;
+gap: 16px;
+}
+
+.tablet-welcome .tablet-welcome-text h2 {
+font-size: 28px;
+margin: 5px 0;
+}
+
+.tablet-welcome .tablet-welcome-text > p {
+font-size: 11px;
+margin: 5px 0 8px;
+}
+
+.tablet-welcome .tablet-steps {
+gap: 5px;
+margin-top: 7px;
+}
+
+.tablet-welcome .tablet-step {
+padding: 6px 8px;
+}
+
+.tablet-welcome .tablet-qr-card {
+padding: 8px 12px;
+gap: 5px;
+}
+
+.tablet-welcome .tablet-qr-code svg {
+width: min(190px, 34vh, 40vw);
+}
+
+.tablet-welcome-footer .tablet-group-members {
+font-size: 10px;
+column-gap: 12px;
+}
+}
+
+/* Narrow screens */
+@media (max-width: 760px) {
+.tablet-dashboard.tablet-welcome {
+padding: 8px 10px 5px;
+gap: 4px;
+}
+
+.tablet-welcome .tablet-welcome-content {
+grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+gap: 8px;
+padding: 4px 0;
+}
+
+.tablet-welcome .tablet-welcome-text h2 {
+font-size: clamp(18px, 4vw, 26px);
+}
+
+.tablet-welcome .tablet-welcome-text > p {
+font-size: 10px;
+}
+
+.tablet-welcome .tablet-step {
+padding: 5px;
+gap: 5px;
+}
+
+.tablet-welcome .tablet-step strong {
+font-size: 10px;
+}
+
+.tablet-welcome .tablet-step small {
+font-size: 9px;
+}
+
+.tablet-welcome .tablet-qr-card {
+padding: 8px 5px;
+}
+
+.tablet-welcome .tablet-qr-code svg {
+width: min(160px, 30vh, 38vw);
+}
+
+.tablet-welcome-footer .tablet-footer-status {
+font-size: 9px;
+}
+
+.tablet-welcome-footer .tablet-group-members {
+column-gap: 8px;
+font-size: 9px;
+}
+}
+
+.tablet-welcome-footer .tablet-group-members {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  width: 100%;
+  padding: 6px 0;
+  font-size: 11px;
+  text-align: center;
+}
+
+.tablet-welcome-footer .tablet-members-title {
+  font-weight: 800;
+  letter-spacing: 1px;
+}

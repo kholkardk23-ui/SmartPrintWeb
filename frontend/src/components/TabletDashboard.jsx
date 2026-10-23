@@ -146,6 +146,7 @@ function getStatusClass(order) {
 function WelcomeScreen({ lastUpdated, connectionError }) {
   return (
     <main className="tablet-dashboard tablet-welcome">
+      {/* Header */}
       <header className="tablet-header">
         <div className="tablet-brand">
           <div className="tablet-brand-icon">🖨️</div>
@@ -166,7 +167,9 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
         </div>
       </header>
 
+      {/* Main Welcome Content */}
       <section className="tablet-welcome-content">
+        {/* Instructions */}
         <div className="tablet-welcome-text">
           <span className="tablet-eyebrow">SELF-SERVICE PRINTING</span>
 
@@ -181,6 +184,7 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
             choose your print settings, and place your order.
           </p>
 
+          {/* Steps */}
           <div className="tablet-steps">
             <div className="tablet-step">
               <span>1</span>
@@ -208,6 +212,7 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
           </div>
         </div>
 
+        {/* QR Code Card */}
         <div className="tablet-qr-card">
           <div className="tablet-qr-heading">SCAN TO GET STARTED</div>
 
@@ -235,16 +240,28 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
         </div>
       </section>
 
-      <footer className="tablet-footer">
-        <span>SmartPrint Self-Service Machine</span>
+      {/* Footer and Project Team */}
+      <footer className="tablet-footer tablet-welcome-footer">
+        <div className="tablet-footer-status">
+          <span>SmartPrint Self-Service Machine</span>
 
-        <span>
-          {lastUpdated
-            ? `Last checked: ${formatDate(lastUpdated)}`
-            : "Connecting to server..."}
-        </span>
+          <span>
+            {lastUpdated
+              ? `Last checked: ${formatDate(lastUpdated)}`
+              : "Connecting to server..."}
+          </span>
+        </div>
+
+        <div className="tablet-group-members">
+          <span className="tablet-members-title">PROJECT TEAM</span>
+          <span>Darshan Kholkar</span>
+          <span>Harshavardhan Chavan</span>
+          <span>Pradip Biradar</span>
+          <span>Rajveer Sahare</span>
+        </div>
       </footer>
 
+      {/* Connection Warning */}
       {connectionError && (
         <div className="tablet-connection-warning" role="status">
           Unable to refresh orders. Retrying automatically...
@@ -253,6 +270,7 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
     </main>
   );
 }
+
 
 function OrderDetails({ order, onHome }) {
   const fileNames = getFileNames(order);
