@@ -9,6 +9,7 @@ import OrderSummaryCard from './components/OrderSummaryCard';
 import HowItWorksModal from './components/HowItWorksModal';
 import { uploadDocuments, checkHealth } from './services/api';
 import { WifiOff, Users } from 'lucide-react';
+import TabletDashboard from "./components/TabletDashboard";
 
 export default function App() {
   const [files, setFiles] = useState([]);
@@ -20,6 +21,11 @@ export default function App() {
   const [activeOrder, setActiveOrder] = useState(null);
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
   const [backendOnline, setBackendOnline] = useState(null);
+  const isTabletRoute = window.location.pathname === "/tablet";
+
+if (isTabletRoute) {
+  return <TabletDashboard />;
+}
 
   // Check backend health on initial load
   useEffect(() => {
