@@ -18,7 +18,6 @@ from app.services.pricing_service import (
     calculate_pricing,
 )
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
@@ -32,7 +31,7 @@ def generate_order_number(db: Session) -> str:
     """
     Generate the next customer-facing order number.
 
-    Format:
+    Examples:
         SP-000001
         SP-000002
         SP-000003
@@ -50,7 +49,10 @@ def generate_order_number(db: Session) -> str:
         if not order_number:
             continue
 
-        match = re.fullmatch(r"SP-(\d+)", order_number.strip())
+        match = re.fullmatch(
+            r"SP-(\d+)",
+            order_number.strip(),
+        )
 
         if match:
             number = int(match.group(1))
@@ -71,20 +73,25 @@ def build_order_response(
     Build an OrderResponse containing all PDFs belonging
     to the order.
 
-    Supports both:
-      1. New multi-PDF orders using order_files
-      2. Old single-PDF orders using orders.file_id
+    Supports:
+        1. Multi-PDF orders using order_files.
+        2. Legacy single-PDF orders using orders.file_id.
     """
 
     documents = []
 
-    # --------------------------------------------------------
-    # New multi-PDF order
-    # --------------------------------------------------------
-
+    # Multi-PDF order
     if order.order_files:
-        for order_file in order.order_files:
+        sorted_order_files = sorted(
+            order.order_files,
+            key=lambda item: (
+                item.file_order
+                if item.file_order is not None
+                else 0
+            ),
+        )
 
+        for order_file in sorted_order_files:
             file_record = (
                 db.query(FileRecord)
                 .filter(FileRecord.id == order_file.file_id)
@@ -99,16 +106,14 @@ def build_order_response(
                     file_id=file_record.id,
                     filename=file_record.original_filename,
                     page_count=file_record.page_count,
-                    selected_page_count=order_file.selected_page_count,
+                    selected_page_count=(
+                        order_file.selected_page_count
+                    ),
                 )
             )
 
-    # --------------------------------------------------------
     # Legacy single-PDF order
-    # --------------------------------------------------------
-
     elif order.file_id:
-
         file_record = (
             db.query(FileRecord)
             .filter(FileRecord.id == order.file_id)
@@ -116,28 +121,21 @@ def build_order_response(
         )
 
         if file_record:
-
             documents.append(
                 OrderDocumentResponse(
                     file_id=file_record.id,
                     filename=file_record.original_filename,
                     page_count=file_record.page_count,
-                    selected_page_count=order.selected_page_count,
+                    selected_page_count=(
+                        order.selected_page_count
+                    ),
                 )
             )
-
-    # --------------------------------------------------------
-    # File IDs
-    # --------------------------------------------------------
 
     file_ids = [
         document.file_id
         for document in documents
     ]
-
-    # --------------------------------------------------------
-    # Return response
-    # --------------------------------------------------------
 
     return OrderResponse(
         order_id=order.order_number,
@@ -175,28 +173,20 @@ def create_order(
     db: Session = Depends(get_db),
 ):
     try:
-
-        # ----------------------------------------------------
         # 1. Validate file IDs
-        # ----------------------------------------------------
-
         if not request.file_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one PDF file is required",
             )
 
-        # Remove duplicate file IDs while preserving order
+        # Remove duplicate IDs while preserving order
         file_ids = list(dict.fromkeys(request.file_ids))
 
-        # ----------------------------------------------------
         # 2. Load all files
-        # ----------------------------------------------------
-
         file_records = []
 
         for file_id in file_ids:
-
             file_record = (
                 db.query(FileRecord)
                 .filter(FileRecord.id == file_id)
@@ -211,10 +201,7 @@ def create_order(
 
             file_records.append(file_record)
 
-        # ----------------------------------------------------
-        # 3. Validate and calculate pricing for every PDF
-        # ----------------------------------------------------
-
+        # 3. Calculate pricing for every PDF
         document_pricing = []
 
         total_selected_pages = 0
@@ -226,15 +213,13 @@ def create_order(
 
         for file_record in file_records:
 
-            # ------------------------------------------------
-            # Validate page range
-            # ------------------------------------------------
-
+            # Validate page range for this PDF
             try:
                 selected_pages = parse_and_validate_page_range(
                     request.page_range,
                     file_record.page_count,
                 )
+
             except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -242,21 +227,19 @@ def create_order(
                         f"Invalid page range for "
                         f"{file_record.original_filename}: {exc}"
                     ),
-                )
+                ) from exc
 
             selected_page_count = len(selected_pages)
 
-            # ------------------------------------------------
-            # Calculate pricing for this PDF
-            # ------------------------------------------------
-
+            # Calculate document pricing
             try:
-              pricing = calculate_pricing(
-              selected_page_count=selected_page_count,
-              copies=request.copies,
-              color_mode=request.color_mode,
-              duplex=request.duplex,
-)
+                pricing = calculate_pricing(
+                    selected_page_count=selected_page_count,
+                    copies=request.copies,
+                    color_mode=request.color_mode,
+                    duplex=request.duplex,
+                )
+
             except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -264,21 +247,24 @@ def create_order(
                         f"Pricing error for "
                         f"{file_record.original_filename}: {exc}"
                     ),
-                )
+                ) from exc
 
-            # ------------------------------------------------
-            # Save pricing information
-            # ------------------------------------------------
+            physical_sheet_count = pricing[
+                "physical_sheet_count"
+            ]
 
-            physical_sheet_count = pricing["physical_sheet_count"]
-            document_total = float(pricing["total_amount"])
+            document_total = float(
+                pricing["total_amount"]
+            )
 
             total_selected_pages += selected_page_count
             total_physical_sheets += physical_sheet_count
             total_amount += document_total
 
             if price_per_page is None:
-                price_per_page = float(pricing["price_per_page"])
+                price_per_page = float(
+                    pricing["price_per_page"]
+                )
 
             if currency is None:
                 currency = pricing["currency"]
@@ -292,45 +278,31 @@ def create_order(
                 }
             )
 
-        # ----------------------------------------------------
-        # 4. Generate IDs
-        # ----------------------------------------------------
-
+        # 4. Generate IDs and customer-facing order number
         internal_order_id = str(uuid.uuid4())
+
         customer_order_number = generate_order_number(db)
 
-        # ----------------------------------------------------
-        # 5. Create main Order
-        # ----------------------------------------------------
-
+        # 5. Create main order
         order = Order(
             id=internal_order_id,
             order_number=customer_order_number,
-
-            # Keep legacy field populated with the first PDF.
-            # This preserves compatibility with older code/orders.
             file_id=file_records[0].id,
-
             copies=request.copies,
             color_mode=request.color_mode,
             duplex=request.duplex,
             page_range=request.page_range,
-
             selected_page_count=total_selected_pages,
             physical_sheet_count=total_physical_sheets,
             price_per_page=price_per_page,
-            total_amount=total_amount,
+            total_amount=round(total_amount, 2),
             currency=currency,
-
             status=OrderStatus.CREATED,
         )
 
         db.add(order)
 
-        # ----------------------------------------------------
-        # 6. Create OrderFile rows
-        # ----------------------------------------------------
-
+        # 6. Create OrderFile rows for every PDF
         for index, item in enumerate(document_pricing):
 
             file_record = item["file_record"]
@@ -340,36 +312,34 @@ def create_order(
                 order_id=internal_order_id,
                 file_id=file_record.id,
                 file_order=index + 1,
-                selected_page_count=item["selected_page_count"],
-                physical_sheet_count=item["physical_sheet_count"],
+                selected_page_count=(
+                    item["selected_page_count"]
+                ),
+                physical_sheet_count=(
+                    item["physical_sheet_count"]
+                ),
                 total_amount=item["total_amount"],
             )
 
             db.add(order_file)
 
-        # ----------------------------------------------------
-        # 7. Commit everything together
-        # ----------------------------------------------------
-
+        # 7. Save order and associated documents together
         db.commit()
         db.refresh(order)
 
         logger.info(
-            "Multi-PDF order created successfully: %s | PDFs: %s | Total: %.2f %s",
+            (
+                "Multi-PDF order created successfully: %s | "
+                "PDFs: %s | Total: %.2f %s"
+            ),
             order.order_number,
             len(file_records),
             total_amount,
             currency,
         )
 
-        # ----------------------------------------------------
-        # 8. Return response
-        # ----------------------------------------------------
-
-        return build_order_response(
-            order,
-            db,
-        )
+        # 8. Return order response
+        return build_order_response(order, db)
 
     except HTTPException:
         db.rollback()
@@ -386,7 +356,7 @@ def create_order(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create order",
-        )
+        ) from exc
 
 
 # ============================================================
@@ -401,19 +371,15 @@ def get_latest_order(
     db: Session = Depends(get_db),
 ):
     """
-    Return the highest customer-facing order number.
-
-    Example:
-        SP-000006
+    Return the latest order by customer-facing order number.
     """
 
-order = (
-    db.query(Order)
-    .filter(Order.order_number.isnot(None))
-    .order_by(Order.order_number.desc())
-    .first()
-)
-
+    order = (
+        db.query(Order)
+        .filter(Order.order_number.isnot(None))
+        .order_by(Order.order_number.desc())
+        .first()
+    )
 
     if not order:
         raise HTTPException(
@@ -421,10 +387,7 @@ order = (
             detail="No orders found",
         )
 
-    return build_order_response(
-        order,
-        db,
-    )
+    return build_order_response(order, db)
 
 
 # ============================================================
@@ -439,27 +402,15 @@ def get_all_orders(
     db: Session = Depends(get_db),
 ):
     """
-    Return ALL orders.
-
-    Highest order number is ALWAYS FIRST.
-
-    Example:
-
-        SP-000006
-        SP-000005
-        SP-000004
-        SP-000003
-        SP-000002
-        SP-000001
+    Return all orders in descending order-number order.
     """
 
-orders = (
-    db.query(Order)
-    .filter(Order.order_number.isnot(None))
-    .order_by(Order.order_number.desc())
-    .all()
-)
-
+    orders = (
+        db.query(Order)
+        .filter(Order.order_number.isnot(None))
+        .order_by(Order.order_number.desc())
+        .all()
+    )
 
     return [
         build_order_response(order, db)
@@ -483,7 +434,7 @@ def get_order(
     db: Session = Depends(get_db),
 ):
     """
-    Get one order using customer-facing order number.
+    Get an order using its customer-facing order number.
 
     Example:
         /api/orders/SP-000006
@@ -501,7 +452,4 @@ def get_order(
             detail="Order not found",
         )
 
-    return build_order_response(
-        order,
-        db,
-    )
+    return build_order_response(order, db)

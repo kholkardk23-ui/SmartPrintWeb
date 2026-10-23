@@ -228,15 +228,6 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
 
           <h3>Scan with your phone</h3>
           <p>Open your camera and point it at the QR code.</p>
-
-          <a
-            className="tablet-open-link"
-            href={CUSTOMER_WEBSITE_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open SmartPrint website
-          </a>
         </div>
       </section>
 
