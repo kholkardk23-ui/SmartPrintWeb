@@ -90,6 +90,7 @@ def calculate_physical_sheets(selected_page_count: int, copies: int, duplex: boo
     return int(sheets_per_copy * copies)
 
 
+
 def calculate_pricing(
     selected_page_count: int,
     copies: int,
@@ -97,13 +98,14 @@ def calculate_pricing(
     duplex: bool,
 ) -> Dict[str, Any]:
     """
-    Authoritatively calculate print job pricing based on centralized settings.
-    
-    Formula:
-    - price_per_page = BW_PRICE_PER_PAGE if color_mode == 'bw' else COLOR_PRICE_PER_PAGE
-    - total_amount = selected_page_count * copies * price_per_page
-    - physical_sheet_count = calculate_physical_sheets(selected_page_count, copies, duplex)
+    Calculate printing price based on physical sheets.
+
+    Single-sided: one PDF page per sheet.
+    Double-sided: two PDF pages per sheet.
+
+    Price = physical sheets * price per sheet.
     """
+
     if selected_page_count <= 0:
         raise ValueError("Selected page count must be greater than 0.")
 
@@ -111,14 +113,33 @@ def calculate_pricing(
         raise ValueError("Copies must be between 1 and 100.")
 
     mode = color_mode.strip().lower()
+
     if mode not in ["bw", "color"]:
-        raise ValueError(f"Invalid color mode '{color_mode}'. Must be 'bw' or 'color'.")
+        raise ValueError(
+            f"Invalid color mode '{color_mode}'. "
+            "Must be 'bw' or 'color'."
+        )
 
     price_per_page = (
-        settings.BW_PRICE_PER_PAGE if mode == "bw" else settings.COLOR_PRICE_PER_PAGE
+        settings.BW_PRICE_PER_PAGE
+        if mode == "bw"
+        else settings.COLOR_PRICE_PER_PAGE
     )
-    total_amount = round(selected_page_count * copies * price_per_page, 2)
-    physical_sheet_count = calculate_physical_sheets(selected_page_count, copies, duplex)
+
+    # Calculate sheets for one copy.
+    if duplex:
+        sheets_per_copy = (selected_page_count + 1) // 2
+    else:
+        sheets_per_copy = selected_page_count
+
+    # Calculate sheets for all copies.
+    physical_sheet_count = sheets_per_copy * copies
+
+    # Charge based on physical sheets, not PDF pages.
+    total_amount = round(
+        physical_sheet_count * price_per_page,
+        2,
+    )
 
     return {
         "selected_page_count": selected_page_count,
@@ -130,3 +151,4 @@ def calculate_pricing(
         "total_amount": total_amount,
         "currency": settings.CURRENCY,
     }
+

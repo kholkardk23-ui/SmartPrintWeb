@@ -345,9 +345,11 @@ export default function PrintingOptionsScreen({
    * 20 pages × 1 copy × ₹3
    * = ₹60
    */
-  const estimatedTotalPrice = useMemo(() => {
-    return selectedPageCount * copies * pricePerPage;
-  }, [selectedPageCount, copies, pricePerPage]);
+  const physicalSheets = duplex
+  ? Math.ceil(selectedPageCount / 2)
+  : selectedPageCount;
+
+const totalPrice = physicalSheets * pricePerPage * copies;
 
   /**
    * Change number of copies
