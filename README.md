@@ -269,4 +269,4 @@ All 9 test cases will run against the test suite.
 - **Darshan Kholkar**
 - **Harshvardhan Chavan**
 - **Rajveer Sahare**
-- **Pradeep Biradar**
+- **Pradip Biradar**
