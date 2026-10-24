@@ -53,3 +53,5 @@ Thumbs.db
 sample_document.pdf
 
 backend/test.pdf
+
+backend/.venv/
