@@ -25,10 +25,27 @@ class Settings(BaseSettings):
     COLOR_PRICE_PER_PAGE: float = 10.0
     CURRENCY: str = "INR"
 
-    # Payment Configuration
-    PAYMENT_ENABLED: bool = False
-    UPI_ID: str = ""
-    UPI_NAME: str = "SmartPrint"
+    # Dynamic UPI Configuration
+    PAYMENT_ENABLED: bool = True
+    UPI_ID: str = "smartprint@upi"
+    UPI_NAME: str = "SmartPrint Kiosk"
+
+    # Automatic payment verification
+    # auto     -> use Cashfree when credentials exist, otherwise demo mode
+    # cashfree -> always use Cashfree (errors if credentials are missing)
+    # demo     -> never contact a gateway (useful for local demos/tests)
+    PAYMENT_PROVIDER: str = "auto"
+    DEMO_AUTO_VERIFY_SECONDS: int = 10
+
+    # Cashfree Payment Gateway (sandbox by default)
+    CASHFREE_ENV: str = "sandbox"  # sandbox | production
+    CASHFREE_CLIENT_ID: str = ""
+    CASHFREE_CLIENT_SECRET: str = ""
+    CASHFREE_WEBHOOK_SECRET: str = ""
+    CASHFREE_API_VERSION: str = "2023-08-01"
+    CASHFREE_CUSTOMER_PHONE: str = "9999999999"
+    CASHFREE_CUSTOMER_EMAIL: str = "customer@smartprint.local"
+    CASHFREE_RETURN_URL: str = "http://localhost:5173/"
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = [
@@ -52,6 +69,31 @@ class Settings(BaseSettings):
     @property
     def max_file_size_bytes(self) -> int:
         return self.MAX_FILE_SIZE_MB * 1024 * 1024
+
+    @property
+    def cashfree_configured(self) -> bool:
+        """True when both Cashfree API credentials are present."""
+        return bool(
+            (self.CASHFREE_CLIENT_ID or "").strip()
+            and (self.CASHFREE_CLIENT_SECRET or "").strip()
+        )
+
+    @property
+    def effective_payment_provider(self) -> str:
+        """Resolve which payment provider should be used."""
+        provider = (self.PAYMENT_PROVIDER or "auto").strip().lower()
+
+        if provider in ("cashfree", "demo"):
+            return provider
+
+        return "cashfree" if self.cashfree_configured else "demo"
+
+    @property
+    def cashfree_base_url(self) -> str:
+        if (self.CASHFREE_ENV or "").strip().lower() == "production":
+            return "https://api.cashfree.com/pg"
+
+        return "https://sandbox.cashfree.com/pg"
 
     @property
     def sanitized_database_url(self) -> str:

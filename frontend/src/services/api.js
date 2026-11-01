@@ -111,6 +111,12 @@ export const getOrder = async (orderId) => {
   return response.data;
 };
 
+// Update order status (e.g. PRINTING, COMPLETED)
+export const updateOrderStatus = async (orderId, status) => {
+  const response = await api.patch(`/api/orders/${orderId}/status`, { status });
+  return response.data;
+};
+
 // Backend health check
 export const healthCheck = async () => {
   const response = await api.get("/api/health");
@@ -121,6 +127,25 @@ export const healthCheck = async () => {
 // Compatibility alias used by the old polished App.jsx
 export const checkHealth = healthCheck;
 
+// Start Dynamic UPI payment for order
+export const startPayment = async (orderId) => {
+  const response = await api.post(`/api/payments/${orderId}/start`);
+  return response.data;
+};
+
+// Verify payment for order
+export const verifyPayment = async (orderId, paymentReference = null) => {
+  const payload = paymentReference ? { payment_reference: paymentReference } : {};
+  const response = await api.post(`/api/payments/${orderId}/verify`, payload);
+  return response.data;
+};
+
+// Get payment status for polling
+export const getPaymentStatus = async (orderId) => {
+  const response = await api.get(`/api/payments/${orderId}/status`);
+  return response.data;
+};
+
 // Default API object
 const apiService = {
   uploadFile,
@@ -129,8 +154,12 @@ const apiService = {
   createOrder,
   getOrders,
   getOrder,
+  updateOrderStatus,
   healthCheck,
   checkHealth,
+  startPayment,
+  verifyPayment,
+  getPaymentStatus,
 };
 
 export default apiService;

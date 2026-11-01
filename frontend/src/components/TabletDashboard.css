@@ -345,6 +345,221 @@
   letter-spacing: 0.8px;
 }
 
+/* =========================================
+   TABLET UPI SCANNER - SINGLE NON-SCROLLABLE PAGE
+   ========================================= */
+
+.tablet-dashboard.tablet-upi-screen {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px 44px;
+  box-sizing: border-box;
+}
+
+.tablet-payment-badge {
+  padding: 10px 18px;
+  border: 1px solid #fed7aa;
+  border-radius: 30px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+
+.tablet-upi-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 10px 0;
+  gap: 14px;
+}
+
+.tablet-upi-amount-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.tablet-upi-order-tag {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: var(--sp-primary);
+  text-transform: uppercase;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 4px 14px;
+  border-radius: 20px;
+}
+
+.tablet-upi-amount-value {
+  font-size: clamp(38px, 5.5vh, 56px);
+  font-weight: 900;
+  color: var(--sp-text);
+  letter-spacing: -1.5px;
+  line-height: 1.1;
+  margin: 4px 0 0;
+}
+
+.tablet-upi-amount-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sp-muted);
+}
+
+.tablet-upi-qr-card {
+  background: #ffffff;
+  border: 1.5px solid var(--sp-border);
+  border-radius: 24px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  max-width: 360px;
+  width: 100%;
+}
+
+.tablet-upi-qr-frame {
+  padding: 8px;
+  background: #ffffff;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tablet-upi-qr-frame svg {
+  display: block;
+  width: clamp(160px, 24vh, 220px);
+  height: clamp(160px, 24vh, 220px);
+}
+
+.tablet-upi-qr-prompt {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--sp-text);
+}
+
+.tablet-upi-apps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tablet-upi-app-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.tablet-upi-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.tablet-upi-simulate-btn {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tablet-upi-simulate-btn:hover {
+  background: #dbeafe;
+}
+
+.tablet-upi-cancel-btn {
+  background: transparent;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tablet-upi-cancel-btn:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.tablet-upi-status-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: #059669;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tablet-upi-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: pulseDot 1.5s infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.3);
+  }
+}
+
+@media (max-height: 720px) {
+  .tablet-dashboard.tablet-upi-screen {
+    padding: 12px 24px;
+  }
+  .tablet-upi-container {
+    gap: 8px;
+  }
+  .tablet-upi-qr-card {
+    padding: 10px 14px;
+  }
+  .tablet-upi-qr-frame svg {
+    width: clamp(130px, 20vh, 160px);
+    height: clamp(130px, 20vh, 160px);
+  }
+  .tablet-upi-amount-value {
+    font-size: 30px;
+  }
+}
+
 .tablet-order-content {
   width: 100%;
   max-width: 1200px;
@@ -509,6 +724,7 @@
 
 .status-paid,
 .status-completed,
+.status-printing,
 .status-queued {
   background: #dcfce7;
   color: #15803d;

@@ -11,6 +11,7 @@ from app.schemas import (
     OrderCreateRequest,
     OrderResponse,
     OrderDocumentResponse,
+    OrderStatusUpdateRequest,
     ErrorResponse,
 )
 from app.services.pricing_service import (
@@ -21,6 +22,29 @@ from app.services.pricing_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
+
+
+# ============================================================
+# STATUS HELPERS
+# ============================================================
+
+def normalize_status(value) -> str:
+    """Return the plain status value for enums and legacy stored values.
+
+    Older rows may contain values such as "OrderStatus.CREATED" because an
+    enum member was assigned directly to the string column. Normalizing here
+    keeps those rows usable without a database migration.
+    """
+
+    if isinstance(value, OrderStatus):
+        return value.value
+
+    raw = str(value or "").strip()
+
+    if raw.startswith("OrderStatus."):
+        return raw.split(".", 1)[1]
+
+    return raw
 
 
 # ============================================================
@@ -137,8 +161,15 @@ def build_order_response(
         for document in documents
     ]
 
+    primary_file_id = documents[0].file_id if documents else order.file_id
+    primary_filename = documents[0].filename if documents else None
+
     return OrderResponse(
+        id=order.id,
         order_id=order.order_number,
+        order_number=order.order_number,
+        file_id=primary_file_id,
+        filename=primary_filename,
         file_ids=file_ids,
         documents=documents,
         copies=order.copies,
@@ -150,7 +181,7 @@ def build_order_response(
         price_per_page=order.price_per_page,
         total_amount=order.total_amount,
         currency=order.currency,
-        status=order.status,
+        status=normalize_status(order.status),
     )
 
 
@@ -297,7 +328,7 @@ def create_order(
             price_per_page=price_per_page,
             total_amount=round(total_amount, 2),
             currency=currency,
-            status=OrderStatus.CREATED,
+            status=OrderStatus.CREATED.value,
         )
 
         db.add(order)
@@ -442,7 +473,7 @@ def get_order(
 
     order = (
         db.query(Order)
-        .filter(Order.order_number == order_id)
+        .filter((Order.order_number == order_id) | (Order.id == order_id))
         .first()
     )
 
@@ -452,4 +483,53 @@ def get_order(
             detail="Order not found",
         )
 
+    return build_order_response(order, db)
+
+
+# ============================================================
+# UPDATE ORDER STATUS
+# ============================================================
+
+@router.patch(
+    "/{order_id}/status",
+    response_model=OrderResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        400: {"model": ErrorResponse},
+    },
+)
+def update_order_status(
+    order_id: str,
+    payload: OrderStatusUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Update the lifecycle status of an order (e.g. PRINTING, COMPLETED).
+    """
+    order = (
+        db.query(Order)
+        .filter((Order.order_number == order_id) | (Order.id == order_id))
+        .first()
+    )
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found",
+        )
+
+    target_status = payload.status.strip().upper()
+    valid_statuses = [s.value for s in OrderStatus]
+
+    if target_status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status '{payload.status}'. Valid statuses: {valid_statuses}",
+        )
+
+    order.status = target_status
+    db.commit()
+    db.refresh(order)
+
+    logger.info("Order '%s' status updated to '%s'", order.order_number or order.id, target_status)
     return build_order_response(order, db)

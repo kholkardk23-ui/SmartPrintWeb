@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Sliders,
   ArrowLeft,
@@ -11,6 +11,8 @@ import {
   Loader2,
   Info,
   RotateCcw,
+  ArrowRight,
+  QrCode,
 } from 'lucide-react';
 
 import { createOrder } from '../services/api';
@@ -189,6 +191,12 @@ export default function PrintingOptionsScreen({
   onReset,
   onOrderCreated,
 }) {
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, []);
+
   /**
    * Always work with a safe array.
    */
@@ -1122,7 +1130,7 @@ console.log("====================================");
             <span>Upload New</span>
           </button>
 
-          {/* CREATE ORDER */}
+          {/* PROCEED TO PAYMENT */}
           <button
             id="create-order-button"
             type="button"
@@ -1138,12 +1146,13 @@ console.log("====================================");
             {isCreatingOrder ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Creating Order...</span>
+                <span>Preparing Payment...</span>
               </>
             ) : (
               <>
-                <Printer className="w-5 h-5" />
-                <span>Create Print Order</span>
+                <QrCode className="w-5 h-5" />
+                <span>Proceed to UPI Payment (₹{estimatedTotalPrice.toFixed(2)})</span>
+                <ArrowRight className="w-4 h-4 ml-0.5" />
               </>
             )}
           </button>

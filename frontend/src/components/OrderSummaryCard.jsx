@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import PrintMachineAnimation from './PrintMachineAnimation';
 import {
   CheckCircle2,
   Copy,
@@ -14,8 +15,19 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 
-export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
+export default function OrderSummaryCard({
+  order,
+  onReset,
+  onBackToOptions,
+  onProceedToPayment,
+}) {
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, []);
 
   if (!order) return null;
 
@@ -28,6 +40,11 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
   };
 
   const currencySymbol = order.currency === 'INR' ? '₹' : order.currency;
+  const isPaid =
+    order.status === 'PAID' ||
+    order.status === 'PRINTING' ||
+    order.status === 'COMPLETED' ||
+    Boolean(order.is_paid);
 
   return (
     <div className="w-full max-w-xl mx-auto animate-fade-in pb-8">
@@ -36,7 +53,7 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
         <button
           type="button"
           onClick={onBackToOptions}
-          className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-brand-600 transition-colors p-1"
+          className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-brand-600 transition-colors p-1 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Adjust Options</span>
@@ -44,9 +61,17 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
 
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 shadow-sm">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Stage 2 Complete • Order Created</span>
+          <span>{isPaid ? 'Step 4 of 4 • Payment Verified & Printing' : 'Order Created • Payment Pending'}</span>
         </span>
       </div>
+
+      {/* Dynamic Print Machine Animation (Active on User's Web when Payment is Verified) */}
+      {isPaid && (
+        <PrintMachineAnimation
+          order={order}
+          onReset={onReset}
+        />
+      )}
 
       {/* Main Order Confirmation Card */}
       <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-card">
@@ -56,10 +81,12 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
             <CheckCircle2 className="w-8 h-8" />
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            Order Created Successfully!
+            {isPaid ? 'Payment Verified • PDF Printing in Progress' : 'Order Created Successfully!'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Your print order is verified and saved in the system
+            {isPaid
+              ? 'Your UPI payment was verified and your document has started printing at the kiosk'
+              : 'Your print order is verified and waiting for payment'}
           </p>
 
           {/* Order ID Pill with Copy */}
@@ -70,7 +97,7 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
               id="copy-order-id-btn"
               type="button"
               onClick={handleCopyOrderId}
-              className="p-1 text-slate-400 hover:text-brand-600 hover:bg-white rounded transition-colors"
+              className="p-1 text-slate-400 hover:text-brand-600 hover:bg-white rounded transition-colors cursor-pointer"
               title="Copy Order ID"
             >
               {copied ? (
@@ -97,9 +124,9 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
               </span>
               <span
                 className="font-bold text-slate-900 text-right truncate max-w-[220px] sm:max-w-[280px]"
-                title={order.filename}
+                title={order.filename || (order.documents && order.documents[0]?.filename)}
               >
-                {order.filename}
+                {order.filename || (order.documents && order.documents.map(d => d.filename).join(', ')) || 'Print Document'}
               </span>
             </div>
 
@@ -164,7 +191,7 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
             <div className="p-3.5 sm:p-4 flex items-center justify-between gap-3">
               <span className="text-slate-500 font-medium">Price per Page:</span>
               <span className="font-semibold text-slate-700">
-                {currencySymbol}{order.price_per_page.toFixed(2)}
+                {currencySymbol}{Number(order.price_per_page || 0).toFixed(2)}
               </span>
             </div>
 
@@ -174,8 +201,18 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
                 <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>Order Status:</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-0.5 rounded-full text-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span
+                className={`inline-flex items-center gap-1.5 font-bold px-3 py-0.5 rounded-full text-xs ${
+                  isPaid
+                    ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                    : 'text-amber-800 bg-amber-50 border border-amber-200'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isPaid ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                  }`}
+                />
                 {order.status}
               </span>
             </div>
@@ -186,7 +223,7 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
         <div className="p-5 rounded-2xl bg-slate-900 text-white flex items-center justify-between mb-6 shadow-md shadow-slate-900/10">
           <div>
             <span className="text-xs font-medium text-slate-400 block uppercase tracking-wider">
-              Total Amount (Confirmed)
+              {isPaid ? 'Total Amount Paid' : 'Total Amount'}
             </span>
             <span className="text-xs text-slate-300">
               {order.selected_page_count} pages × {order.copies} {order.copies === 1 ? 'copy' : 'copies'} × {currencySymbol}{order.price_per_page}
@@ -194,7 +231,7 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
           </div>
           <div className="text-right">
             <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              {currencySymbol}{order.total_amount.toFixed(2)}
+              {currencySymbol}{Number(order.total_amount || 0).toFixed(2)}
             </span>
             <span className="block text-[11px] font-semibold text-brand-400">
               {order.currency}
@@ -202,28 +239,66 @@ export default function OrderSummaryCard({ order, onReset, onBackToOptions }) {
           </div>
         </div>
 
-        {/* Stage 3 Notice (Payment coming in Stage 3) */}
-        <div className="mb-6 p-4 rounded-2xl bg-brand-50/70 border border-brand-200/80 text-xs text-brand-900">
-          <div className="flex items-center gap-2 font-bold text-brand-800 text-sm mb-1.5">
-            <Sparkles className="w-4 h-4 text-brand-600" />
-            <span>Next Step: UPI Payment (Stage 3)</span>
+        {/* Payment Confirmation Receipt or Pending Box */}
+        {isPaid ? (
+          <div className="mb-6 p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 shadow-xs">
+            <div className="flex items-center gap-2 font-bold text-emerald-800 text-sm mb-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>UPI Payment Verified Successfully</span>
+            </div>
+            <p className="text-emerald-700 leading-relaxed font-medium">
+              Payment of <strong>{currencySymbol}{Number(order.total_amount || 0).toFixed(2)}</strong> has been verified.
+              {order.payment_reference && (
+                <span className="block mt-1 font-mono text-[11px] text-emerald-800">
+                  Ref: {order.payment_reference}
+                </span>
+              )}
+              Your document is queued for printing. Please collect your printout at the kiosk tray.
+            </p>
           </div>
-          <p className="text-brand-700/90 leading-relaxed font-medium">
-            Stage 2 has validated and persisted your print order. Dynamic UPI QR code generation and instant payment verification will be integrated in <strong>Stage 3</strong>.
-          </p>
-        </div>
+        ) : (
+          <div className="mb-6 p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-center justify-between gap-3">
+            <div>
+              <p className="font-bold text-amber-900">Payment Pending</p>
+              <p className="text-amber-700 text-[11px] mt-0.5">
+                Complete payment via dynamic UPI to send this order to the printer.
+              </p>
+            </div>
+            {onProceedToPayment && (
+              <button
+                type="button"
+                onClick={onProceedToPayment}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs cursor-pointer shrink-0"
+              >
+                Pay Now
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            id="start-new-order-btn"
-            type="button"
-            onClick={onReset}
-            className="flex-1 inline-flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-base text-white bg-brand-600 hover:bg-brand-700 active:scale-[0.99] transition-all shadow-md shadow-brand-600/25 cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Start New Print Order</span>
-          </button>
+          {!isPaid && onProceedToPayment ? (
+            <button
+              id="proceed-to-payment-btn"
+              type="button"
+              onClick={onProceedToPayment}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-base text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] transition-all shadow-md shadow-emerald-600/25 cursor-pointer"
+            >
+              <CreditCard className="w-5 h-5" />
+              <span>Proceed to UPI Payment ({currencySymbol}{Number(order.total_amount || 0).toFixed(2)})</span>
+            </button>
+          ) : (
+            <button
+              id="start-new-order-btn"
+              type="button"
+              onClick={onReset}
+              className="flex-1 inline-flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-base text-white bg-brand-600 hover:bg-brand-700 active:scale-[0.99] transition-all shadow-md shadow-brand-600/25 cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Start New Print Order</span>
+            </button>
+          )}
 
           <button
             id="adjust-options-btn"

@@ -5,6 +5,7 @@ import FileUploader from './components/FileUploader';
 import DocumentReadyCard from './components/DocumentReadyCard';
 import HowItWorksSection from './components/HowItWorksSection';
 import PrintingOptionsScreen from './components/PrintingOptionsScreen';
+import UPIPaymentScreen from './components/UPIPaymentScreen';
 import OrderSummaryCard from './components/OrderSummaryCard';
 import HowItWorksModal from './components/HowItWorksModal';
 import { uploadDocuments, checkHealth } from './services/api';
@@ -17,7 +18,7 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [currentView, setCurrentView] = useState('upload'); // 'upload', 'options', or 'order_summary'
+  const [currentView, setCurrentView] = useState('upload'); // 'upload', 'options', 'payment', or 'order_summary'
   const [activeOrder, setActiveOrder] = useState(null);
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
   const [backendOnline, setBackendOnline] = useState(null);
@@ -26,6 +27,13 @@ export default function App() {
 if (isTabletRoute) {
   return <TabletDashboard />;
 }
+
+  // Ensure every screen starts at the very top so the user can scroll down naturally
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [currentView, activeOrder]);
 
   // Check backend health on initial load
   useEffect(() => {
@@ -90,9 +98,15 @@ if (isTabletRoute) {
     setCurrentView('upload');
   };
 
-  // Called when an order is created successfully by PrintingOptionsScreen
+  // Called when an order is created successfully by PrintingOptionsScreen -> go to Dynamic UPI step
   const handleOrderCreated = (order) => {
     setActiveOrder(order);
+    setCurrentView('payment');
+  };
+
+  // Called when UPI payment is verified successfully -> go to Order Summary
+  const handlePaymentSuccess = (paidOrder) => {
+    setActiveOrder(paidOrder);
     setCurrentView('order_summary');
   };
 
@@ -113,12 +127,20 @@ if (isTabletRoute) {
           </div>
         )}
 
-        {/* View Routing: Upload/Ready Flow, Printing Options, or Order Summary */}
+        {/* View Routing: Upload/Ready Flow, Options, Payment, or Order Summary */}
         {currentView === 'order_summary' && activeOrder ? (
           <OrderSummaryCard
             order={activeOrder}
             onReset={handleReset}
             onBackToOptions={() => setCurrentView('options')}
+            onProceedToPayment={() => setCurrentView('payment')}
+          />
+        ) : currentView === 'payment' && activeOrder ? (
+          <UPIPaymentScreen
+            order={activeOrder}
+            onPaymentSuccess={handlePaymentSuccess}
+            onBackToOptions={() => setCurrentView('options')}
+            onCancel={handleReset}
           />
         ) : currentView === 'options' ? (
           <PrintingOptionsScreen

@@ -1,17 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { getOrders } from "../services/api";
+import {
+  getOrders,
+  startPayment,
+  verifyPayment,
+  getPaymentStatus,
+} from "../services/api";
 import "./TabletDashboard.css";
 
 const REFRESH_INTERVAL = 3000;
 const CUSTOMER_WEBSITE_URL = "https://smart-print-web-orpin.vercel.app/";
 
 function getOrderKey(order) {
-  return String(
-    order?.id ??
-      order?.order_number ??
-      order?.created_at ??
-      `${order?.total_amount ?? ""}-${order?.status ?? ""}`
+  const id = order?.id || order?.order_number || order?.order_id || "order";
+  const status = order?.status || "UNKNOWN";
+  return `${id}__${status}`;
+}
+
+function getOrderId(order) {
+  return String(order?.order_number ?? order?.order_id ?? order?.id ?? "");
+}
+
+function isOrderPaid(order) {
+  if (!order) return false;
+  const status = String(order?.status ?? "").toUpperCase();
+  const paymentStatus = String(order?.payment_status ?? "").toUpperCase();
+  return (
+    ["PAID", "QUEUED", "PRINTING", "COMPLETED"].includes(status) ||
+    paymentStatus === "PAID" ||
+    Boolean(order?.is_paid)
   );
 }
 
@@ -43,6 +60,7 @@ function formatDate(dateValue) {
 function getOrderNumber(order) {
   return (
     order?.order_number ??
+    order?.order_id ??
     (order?.id ? `SP-${String(order.id).slice(0, 8)}` : "Order")
   );
 }
@@ -403,6 +421,228 @@ function OrderDetails({ order, onHome }) {
   );
 }
 
+function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
+  const [paymentData, setPaymentData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+
+  const orderIdentifier = order?.order_id || order?.id || order?.order_number;
+  const pollingRef = useRef(null);
+
+  // Initialize payment details
+  useEffect(() => {
+    let active = true;
+
+    async function init() {
+      if (!orderIdentifier) return;
+      setLoading(true);
+      try {
+        const data = await startPayment(orderIdentifier);
+        if (!active) return;
+        setPaymentData(data);
+        if (
+          data.payment_status === "PAID" ||
+          data.is_paid ||
+          data.status === "PRINTING" ||
+          data.status === "COMPLETED"
+        ) {
+          onPaymentSuccess({ ...order, ...data, status: "PRINTING" });
+        }
+      } catch (err) {
+        console.error("Tablet startPayment error:", err);
+        // Fallback dynamic UPI URI
+        const upiId = "9823555453@kotakbank";
+        const upiName = "SmartPrint Kiosk";
+        const amount = Number(order?.total_amount || 0).toFixed(2);
+        const orderNum = getOrderNumber(order);
+        const fallbackUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(
+          upiName
+        )}&am=${amount}&cu=INR&tn=${encodeURIComponent(
+          `SmartPrint ${orderNum}`
+        )}&tr=${orderNum}`;
+
+        if (active) {
+          setPaymentData({
+            upi_uri: fallbackUri,
+            qr_data: fallbackUri,
+          });
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    init();
+
+    return () => {
+      active = false;
+    };
+  }, [orderIdentifier, order, onPaymentSuccess]);
+
+  // Real-time polling to detect payment verification from phone
+  useEffect(() => {
+    if (!orderIdentifier) return;
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const statusRes = await getPaymentStatus(orderIdentifier);
+        if (
+          statusRes &&
+          (statusRes.is_paid ||
+            statusRes.status === "PAID" ||
+            statusRes.status === "PRINTING" ||
+            statusRes.status === "COMPLETED" ||
+            statusRes.payment_status === "PAID")
+        ) {
+          clearInterval(pollingRef.current);
+          onPaymentSuccess({ ...order, ...statusRes, status: "PRINTING" });
+        }
+      } catch (e) {
+        // silent polling error
+      }
+    }, 2000);
+
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [orderIdentifier, order, onPaymentSuccess]);
+
+  // Simulate payment for quick testing on kiosk
+  const handleSimulatePayment = async () => {
+    if (verifying || !orderIdentifier) return;
+    setVerifying(true);
+    setErrorMessage(null);
+    try {
+      const result = await verifyPayment(
+        orderIdentifier,
+        `DEMO-PAID-${Date.now()}`
+      );
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      onPaymentSuccess({ ...order, ...result, status: "PRINTING" });
+    } catch (err) {
+      console.error("Simulation failed:", err);
+      setErrorMessage("Verification failed. Please try again.");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const dynamicUpiUri =
+    paymentData?.upi_uri ||
+    paymentData?.qr_data ||
+    `upi://pay?pa=9823555453@kotakbank&pn=SmartPrint%20Kiosk&am=${Number(
+      order?.total_amount || 0
+    ).toFixed(2)}&cu=INR&tn=${encodeURIComponent(
+      `SmartPrint ${getOrderNumber(order)}`
+    )}&tr=${getOrderNumber(order)}`;
+
+  return (
+    <main className="tablet-dashboard tablet-upi-screen">
+      <header className="tablet-header">
+        <div className="tablet-brand">
+          <div className="tablet-brand-icon">🖨️</div>
+          <div>
+            <h1>SmartPrint</h1>
+            <p>Print Smart. Print Simple.</p>
+          </div>
+        </div>
+
+        <div className="tablet-order-badge tablet-payment-badge">
+          💳 AWAITING PAYMENT
+        </div>
+      </header>
+
+      <div className="tablet-upi-container">
+        {/* Amount Display */}
+        <div className="tablet-upi-amount-card">
+          <span className="tablet-upi-order-tag">{getOrderNumber(order)}</span>
+          <h2 className="tablet-upi-amount-value">
+            {formatAmount(order?.total_amount)}
+          </h2>
+          <span className="tablet-upi-amount-label">
+            Scan QR code with any UPI app to pay
+          </span>
+        </div>
+
+        {/* Scanner Card */}
+        <div className="tablet-upi-qr-card">
+          <div className="tablet-upi-qr-frame">
+            {loading ? (
+              <div style={{ padding: "40px", color: "var(--sp-muted)", fontSize: "14px" }}>
+                Generating Scanner...
+              </div>
+            ) : (
+              <QRCodeSVG
+                value={dynamicUpiUri}
+                size={210}
+                level="H"
+                includeMargin
+                imageSettings={{
+                  src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%232563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>',
+                  height: 28,
+                  width: 28,
+                  excavate: true,
+                }}
+              />
+            )}
+          </div>
+
+          <span className="tablet-upi-qr-prompt">
+            Scan to Pay {formatAmount(order?.total_amount)}
+          </span>
+
+          <div className="tablet-upi-apps">
+            {["GPay", "PhonePe", "Paytm", "BHIM"].map((app) => (
+              <span key={app} className="tablet-upi-app-pill">
+                {app}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Status Hint */}
+        <div className="tablet-upi-status-hint">
+          <span className="tablet-upi-pulse-dot" />
+          <span>Awaiting payment verification from phone...</span>
+        </div>
+
+        {errorMessage && (
+          <div style={{ color: "#b91c1c", fontSize: "12px", fontWeight: "600" }}>
+            {errorMessage}
+          </div>
+        )}
+
+        {/* Quick Actions (Simulate & Cancel) */}
+        <div className="tablet-upi-actions">
+          <button
+            type="button"
+            className="tablet-upi-simulate-btn"
+            onClick={handleSimulatePayment}
+            disabled={verifying}
+          >
+            {verifying ? "Verifying..." : "⚡ Quick Test: Simulate Payment"}
+          </button>
+
+          <button
+            type="button"
+            className="tablet-upi-cancel-btn"
+            onClick={onHome}
+            disabled={verifying}
+          >
+            ← Cancel
+          </button>
+        </div>
+      </div>
+
+      <footer className="tablet-footer">
+        <span>SmartPrint Self-Service Machine</span>
+        <span>{getOrderNumber(order)}</span>
+      </footer>
+    </main>
+  );
+}
+
 export default function TabletDashboard() {
   const [activeOrder, setActiveOrder] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -412,7 +652,35 @@ export default function TabletDashboard() {
   const initialized = useRef(false);
   const activeOrderKey = useRef(null);
   const dismissedOrderKeys = useRef(new Set());
+  const dismissedOrderIds = useRef(new Set());
+  const activeOrderRef = useRef(null);
   const pollingInProgress = useRef(false);
+
+  useEffect(() => {
+    activeOrderRef.current = activeOrder;
+  }, [activeOrder]);
+
+  const handlePaymentSuccess = useCallback((paidOrder) => {
+    if (paidOrder) {
+      activeOrderKey.current = getOrderKey(paidOrder);
+      setActiveOrder(paidOrder);
+    }
+  }, []);
+
+  const handleHome = useCallback(() => {
+    if (activeOrderRef.current) {
+      const orderId = getOrderId(activeOrderRef.current);
+      if (orderId) {
+        dismissedOrderIds.current.add(orderId);
+      }
+    }
+    if (activeOrderKey.current) {
+      dismissedOrderKeys.current.add(activeOrderKey.current);
+    }
+
+    activeOrderKey.current = null;
+    setActiveOrder(null);
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     if (pollingInProgress.current) return;
@@ -467,13 +735,16 @@ export default function TabletDashboard() {
           Date.now() - createdAt <= 10 * 60 * 1000 &&
           createdAt <= Date.now() + 60 * 1000;
 
+        const newestKey = getOrderKey(newestOrder);
+        const newestId = getOrderId(newestOrder);
+
         if (
           newestOrder &&
           isRecent &&
-          !dismissedOrderKeys.current.has(getOrderKey(newestOrder))
+          !dismissedOrderKeys.current.has(newestKey) &&
+          !dismissedOrderIds.current.has(newestId)
         ) {
-          const key = getOrderKey(newestOrder);
-          activeOrderKey.current = key;
+          activeOrderKey.current = newestKey;
           setActiveOrder(newestOrder);
         }
 
@@ -483,10 +754,12 @@ export default function TabletDashboard() {
       // Find orders that appeared after the previous poll.
       const newOrders = sortedOrders.filter((order) => {
         const key = getOrderKey(order);
+        const id = getOrderId(order);
 
         return (
           !seenOrderKeys.current.has(key) &&
-          !dismissedOrderKeys.current.has(key)
+          !dismissedOrderKeys.current.has(key) &&
+          !dismissedOrderIds.current.has(id)
         );
       });
 
@@ -495,8 +768,21 @@ export default function TabletDashboard() {
         seenOrderKeys.current.add(getOrderKey(order));
       });
 
-      // Display the newest newly-created order if the tablet is on Home.
-      if (newOrders.length > 0 && !activeOrderKey.current) {
+      // If viewing an active order, update its state live when payment or status changes
+      if (activeOrderRef.current) {
+        const activeId = getOrderId(activeOrderRef.current);
+        const matchingCurrent = sortedOrders.find(
+          (o) => getOrderId(o) === activeId
+        );
+        if (
+          matchingCurrent &&
+          (matchingCurrent.status !== activeOrderRef.current.status ||
+            Boolean(matchingCurrent.is_paid) !== Boolean(activeOrderRef.current.is_paid))
+        ) {
+          activeOrderKey.current = getOrderKey(matchingCurrent);
+          setActiveOrder(matchingCurrent);
+        }
+      } else if (newOrders.length > 0) {
         const newestOrder = newOrders[0];
         activeOrderKey.current = getOrderKey(newestOrder);
         setActiveOrder(newestOrder);
@@ -534,16 +820,17 @@ export default function TabletDashboard() {
     };
   }, [fetchOrders]);
 
-  const handleHome = useCallback(() => {
-    if (activeOrderKey.current) {
-      dismissedOrderKeys.current.add(activeOrderKey.current);
+  if (activeOrder) {
+    if (!isOrderPaid(activeOrder)) {
+      return (
+        <TabletPaymentView
+          order={activeOrder}
+          onPaymentSuccess={handlePaymentSuccess}
+          onHome={handleHome}
+        />
+      );
     }
 
-    activeOrderKey.current = null;
-    setActiveOrder(null);
-  }, []);
-
-  if (activeOrder) {
     return <OrderDetails order={activeOrder} onHome={handleHome} />;
   }
 

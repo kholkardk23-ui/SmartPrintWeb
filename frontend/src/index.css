@@ -23,3 +23,107 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+
+/* ============================================================
+   SMARTPRINT PRINT MACHINE ANIMATIONS
+   ============================================================ */
+
+@keyframes rollerSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes laserSweep {
+  0% {
+    left: 8%;
+    opacity: 0.5;
+  }
+  50% {
+    left: 78%;
+    opacity: 1;
+  }
+  100% {
+    left: 8%;
+    opacity: 0.5;
+  }
+}
+
+@keyframes paperFeedIn {
+  0% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(12px);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(28px);
+    opacity: 0.2;
+  }
+}
+
+@keyframes paperSlideOut {
+  0% {
+    transform: translateY(-55px) scale(0.96);
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(0px) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseLed {
+  0%, 100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 5px #10b981);
+  }
+  50% {
+    opacity: 0.35;
+    filter: drop-shadow(0 0 1px #10b981);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-roller-spin {
+  animation: rollerSpin 0.7s linear infinite;
+}
+
+.animate-laser-sweep {
+  animation: laserSweep 1.8s ease-in-out infinite;
+}
+
+.animate-paper-feed {
+  animation: paperFeedIn 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-paper-eject {
+  animation: paperSlideOut 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-led {
+  animation: pulseLed 1s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}

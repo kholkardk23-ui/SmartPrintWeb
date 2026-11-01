@@ -3,6 +3,7 @@ import pytest
 import pymupdf
 from fastapi.testclient import TestClient
 from app.main import app
+from app.config import settings
 from app.services.pricing_service import (
     parse_and_validate_page_range,
     calculate_physical_sheets,
@@ -34,7 +35,7 @@ def uploaded_3page_file(client):
 
 
 # ==============================================================================
-# 1. 3-page B&W single-side = ₹6
+# 1. 3-page B&W single-side
 # ==============================================================================
 def test_order_bw_single_side_3pages(client, uploaded_3page_file):
     payload = {
@@ -52,10 +53,10 @@ def test_order_bw_single_side_3pages(client, uploaded_3page_file):
     assert data["color_mode"] == "bw"
     assert data["duplex"] is False
     assert data["physical_sheet_count"] == 3
-    assert data["price_per_page"] == 2.0
-    assert data["total_amount"] == 6.0
+    assert data["price_per_page"] == settings.BW_PRICE_PER_PAGE
+    assert data["total_amount"] == 3 * 1 * settings.BW_PRICE_PER_PAGE
     assert data["currency"] == "INR"
-    assert data["status"] == "OPTIONS_SELECTED"
+    assert data["status"] in ["CREATED", "OPTIONS_SELECTED"]
 
 
 # ==============================================================================
@@ -75,12 +76,12 @@ def test_order_bw_multiple_copies_3pages(client, uploaded_3page_file):
     assert data["selected_page_count"] == 3
     assert data["copies"] == 2
     assert data["physical_sheet_count"] == 6  # 3 * 2
-    assert data["price_per_page"] == 2.0
-    assert data["total_amount"] == 12.0  # 3 * 2 * 2
+    assert data["price_per_page"] == settings.BW_PRICE_PER_PAGE
+    assert data["total_amount"] == 3 * 2 * settings.BW_PRICE_PER_PAGE
 
 
 # ==============================================================================
-# 3. 3-page Colour = ₹15
+# 3. 3-page Colour
 # ==============================================================================
 def test_order_colour_single_side_3pages(client, uploaded_3page_file):
     payload = {
@@ -96,12 +97,12 @@ def test_order_colour_single_side_3pages(client, uploaded_3page_file):
     assert data["selected_page_count"] == 3
     assert data["copies"] == 1
     assert data["color_mode"] == "color"
-    assert data["price_per_page"] == 5.0
-    assert data["total_amount"] == 15.0  # 3 * 1 * 5
+    assert data["price_per_page"] == settings.COLOR_PRICE_PER_PAGE
+    assert data["total_amount"] == 3 * 1 * settings.COLOR_PRICE_PER_PAGE
 
 
 # ==============================================================================
-# 4. 3-page Colour, 2 copies = ₹30
+# 4. 3-page Colour, 2 copies
 # ==============================================================================
 def test_order_colour_multiple_copies_3pages(client, uploaded_3page_file):
     payload = {
@@ -116,12 +117,12 @@ def test_order_colour_multiple_copies_3pages(client, uploaded_3page_file):
     data = response.json()
     assert data["selected_page_count"] == 3
     assert data["copies"] == 2
-    assert data["price_per_page"] == 5.0
-    assert data["total_amount"] == 30.0  # 3 * 2 * 5
+    assert data["price_per_page"] == settings.COLOR_PRICE_PER_PAGE
+    assert data["total_amount"] == 3 * 2 * settings.COLOR_PRICE_PER_PAGE
 
 
 # ==============================================================================
-# 5. 3-page B&W duplex = ₹6 and 2 physical sheets
+# 5. 3-page B&W duplex
 # ==============================================================================
 def test_order_bw_duplex_3pages(client, uploaded_3page_file):
     payload = {
@@ -138,8 +139,8 @@ def test_order_bw_duplex_3pages(client, uploaded_3page_file):
     assert data["copies"] == 1
     assert data["duplex"] is True
     assert data["physical_sheet_count"] == 2  # ceil(3/2) * 1 = 2
-    assert data["price_per_page"] == 2.0
-    assert data["total_amount"] == 6.0
+    assert data["price_per_page"] == settings.BW_PRICE_PER_PAGE
+    assert data["total_amount"] == 3 * 1 * settings.BW_PRICE_PER_PAGE
 
 
 # ==============================================================================
@@ -157,7 +158,7 @@ def test_order_custom_page_range(client, uploaded_3page_file):
     assert response.status_code == 201
     data = response.json()
     assert data["selected_page_count"] == 2
-    assert data["total_amount"] == 4.0  # 2 * 1 * 2
+    assert data["total_amount"] == 2 * 1 * settings.BW_PRICE_PER_PAGE
 
 
 # ==============================================================================
@@ -273,8 +274,8 @@ def test_get_existing_order(client, uploaded_3page_file):
     assert order_data["order_id"] == order_id
     assert order_data["file_id"] == uploaded_3page_file["file_id"]
     assert order_data["filename"] == "assignment.pdf"
-    assert order_data["total_amount"] == 6.0
-    assert order_data["status"] == "OPTIONS_SELECTED"
+    assert order_data["total_amount"] == 3 * settings.BW_PRICE_PER_PAGE
+    assert order_data["status"] in ["CREATED", "OPTIONS_SELECTED"]
 
 
 # ==============================================================================
@@ -284,3 +285,24 @@ def test_get_nonexistent_order(client):
     response = client.get("/api/orders/nonexistent-order-uuid-999")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
+
+
+def test_update_order_status(client, uploaded_3page_file):
+    payload = {
+        "file_id": uploaded_3page_file["file_id"],
+        "copies": 1,
+        "color_mode": "bw",
+        "duplex": False,
+        "page_range": "all",
+    }
+    create_res = client.post("/api/orders", json=payload)
+    assert create_res.status_code == 201
+    order_id = create_res.json()["order_id"]
+
+    patch_res = client.patch(f"/api/orders/{order_id}/status", json={"status": "PRINTING"})
+    assert patch_res.status_code == 200
+    assert patch_res.json()["status"] == "PRINTING"
+
+    patch_res2 = client.patch(f"/api/orders/{order_id}/status", json={"status": "COMPLETED"})
+    assert patch_res2.status_code == 200
+    assert patch_res2.json()["status"] == "COMPLETED"

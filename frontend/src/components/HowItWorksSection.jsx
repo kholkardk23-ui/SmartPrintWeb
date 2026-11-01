@@ -21,7 +21,7 @@ const steps = [
     icon: CreditCard,
     title: 'Pay with UPI',
     desc: 'Pay directly on your phone using any UPI app (GPay, PhonePe, Paytm).',
-    comingSoon: true,
+    isReady: true,
   },
   {
     number: '4',

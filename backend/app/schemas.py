@@ -1,6 +1,6 @@
-from typing import Optional, List
+from typing import Optional, List, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ============================================================
@@ -60,12 +60,11 @@ class OrderCreateRequest(BaseModel):
     """
     Request schema for creating a print order.
 
-    One order can contain multiple PDF files.
+    Supports both multiple PDF files via file_ids and legacy single file_id.
     """
 
-    file_ids: List[str] = Field(
-        ...,
-        min_length=1,
+    file_ids: Optional[List[str]] = Field(
+        default=None,
         description="List of uploaded PDF file UUIDs",
         json_schema_extra={
             "example": [
@@ -73,6 +72,11 @@ class OrderCreateRequest(BaseModel):
                 "5bced4ea-7eb1-419c-9442-99452eec7e62"
             ]
         }
+    )
+
+    file_id: Optional[str] = Field(
+        default=None,
+        description="Single uploaded PDF file UUID for backwards compatibility",
     )
 
     copies: int = Field(
@@ -96,6 +100,16 @@ class OrderCreateRequest(BaseModel):
         "all",
         description="Page range ('all' or e.g. '1-3, 5, 7-9')"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def unify_file_ids(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            if not values.get("file_ids") and values.get("file_id"):
+                values["file_ids"] = [values["file_id"]]
+            elif values.get("file_ids") is None:
+                values["file_ids"] = []
+        return values
 
 
 # ============================================================
@@ -126,8 +140,14 @@ class OrderResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    # Customer-facing order number
+    # Customer-facing order number and UUID
+    id: Optional[str] = None
     order_id: str
+    order_number: Optional[str] = None
+
+    # Legacy fields for single-file backwards compatibility
+    file_id: Optional[str] = None
+    filename: Optional[str] = None
 
     # All PDF IDs in this order
     file_ids: List[str]
@@ -159,14 +179,17 @@ class OrderResponse(BaseModel):
 # ============================================================
 
 class PaymentStartResponse(BaseModel):
-    """Response returned when payment is started for an order."""
+    """Response returned when dynamic UPI payment is started for an order."""
 
     order_id: str
+    order_number: Optional[str] = None
     amount: float
     currency: str
     payment_status: str
     upi_id: str
     upi_name: str
+    upi_uri: str
+    qr_data: str
 
 
 # ============================================================
@@ -176,11 +199,10 @@ class PaymentStartResponse(BaseModel):
 class PaymentVerifyRequest(BaseModel):
     """Request used to verify a payment."""
 
-    payment_reference: str = Field(
-        ...,
-        min_length=1,
+    payment_reference: Optional[str] = Field(
+        default=None,
         max_length=100,
-        description="Payment transaction/reference ID"
+        description="Payment transaction/reference ID (e.g. UTR). Auto-generated if omitted in demo mode.",
     )
 
 
@@ -192,10 +214,71 @@ class PaymentVerifyResponse(BaseModel):
     """Response returned after payment verification."""
 
     order_id: str
+    order_number: Optional[str] = None
     amount: float
     currency: str
     payment_status: str
     order_status: str
+    payment_reference: Optional[str] = None
+
+
+# ============================================================
+# PAYMENT CHECKOUT (AUTOMATIC VERIFICATION)
+# ============================================================
+
+class PaymentCheckoutResponse(BaseModel):
+    """Session information used to collect an automatic UPI payment."""
+
+    order_id: str
+    order_number: Optional[str] = None
+    amount: float
+    currency: str
+
+    # "cashfree" -> open the Cashfree checkout with payment_session_id
+    # "demo"     -> no gateway; the backend confirms the payment automatically
+    provider: str
+    mode: str
+
+    payment_session_id: Optional[str] = None
+    checkout_url: Optional[str] = None
+
+    upi_id: str
+    upi_name: str
+    upi_uri: Optional[str] = None
+    qr_data: Optional[str] = None
+
+    auto_verify_seconds: Optional[int] = None
+    status: str
+    message: str
+
+
+# ============================================================
+# PAYMENT STATUS RESPONSE
+# ============================================================
+
+class PaymentStatusResponse(BaseModel):
+    """Response returned for payment status query."""
+
+    order_id: str
+    order_number: Optional[str] = None
+    amount: float
+    currency: str
+    status: str
+    payment_status: str
+    upi_id: str
+    upi_name: str
+    upi_uri: Optional[str] = None
+    is_paid: bool
+
+
+# ============================================================
+# ORDER STATUS UPDATE
+# ============================================================
+
+class OrderStatusUpdateRequest(BaseModel):
+    """Request to update order status."""
+
+    status: str = Field(..., description="Target order status, e.g. PRINTING, COMPLETED")
 
 
 # ============================================================
