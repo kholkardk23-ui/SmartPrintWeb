@@ -6,7 +6,7 @@ from app.config import settings
 
 logger = logging.getLogger("smartprint.database")
 
-database_url = settings.DATABASE_URL
+database_url = settings.DATABASE_URL or "sqlite:///./smartprint.db"
 connect_args = {}
 
 try:

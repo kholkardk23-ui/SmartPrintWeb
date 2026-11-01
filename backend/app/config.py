@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     APP_VERSION: str = "2.0.0"
     DEBUG: bool = False
 
-    # MySQL Database Configuration
-    DATABASE_URL: str = ""
+    # Database Configuration (MySQL or SQLite fallback)
+    DATABASE_URL: str = "sqlite:///./smartprint.db"
 
     # File Storage
     UPLOAD_DIR: str = "./uploads"
