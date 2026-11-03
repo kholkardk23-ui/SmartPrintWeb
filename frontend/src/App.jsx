@@ -8,7 +8,7 @@ import PrintingOptionsScreen from './components/PrintingOptionsScreen';
 import UPIPaymentScreen from './components/UPIPaymentScreen';
 import OrderSummaryCard from './components/OrderSummaryCard';
 import HowItWorksModal from './components/HowItWorksModal';
-import { uploadDocuments, checkHealth } from './services/api';
+import { uploadDocuments, checkHealth, getOrder } from './services/api';
 import { WifiOff, Users } from 'lucide-react';
 import TabletDashboard from "./components/TabletDashboard";
 
@@ -89,8 +89,60 @@ if (isTabletRoute) {
     });
   };
 
+  // Restore active order on page refresh to prevent duplicate orders
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlOrderId = urlParams.get('order_id');
+      const savedOrderId = urlOrderId || sessionStorage.getItem('smartprint_active_order_id');
+      const savedView = urlOrderId ? 'payment' : sessionStorage.getItem('smartprint_current_view');
+      if (savedOrderId && (savedView === 'payment' || savedView === 'order_summary')) {
+        getOrder(savedOrderId)
+          .then((order) => {
+            if (order) {
+              setActiveOrder(order);
+              const isPaid =
+                order.status === 'CONFIRMED' ||
+                order.status === 'PAID' ||
+                order.payment_status === 'PAID' ||
+                order.is_paid;
+              setCurrentView(isPaid ? 'order_summary' : savedView);
+              if (urlOrderId) {
+                window.history.replaceState({}, '', window.location.pathname);
+              }
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to restore active order:', err);
+            sessionStorage.removeItem('smartprint_active_order_id');
+            sessionStorage.removeItem('smartprint_current_view');
+          });
+      }
+    } catch (e) {
+      // sessionStorage error handling
+    }
+  }, []);
+
+  // Sync active order and current view to sessionStorage
+  useEffect(() => {
+    try {
+      const orderId = activeOrder?.order_number || activeOrder?.order_id || activeOrder?.id;
+      if (orderId && (currentView === 'payment' || currentView === 'order_summary')) {
+        sessionStorage.setItem('smartprint_active_order_id', orderId);
+        sessionStorage.setItem('smartprint_current_view', currentView);
+      } else if (currentView === 'upload') {
+        sessionStorage.removeItem('smartprint_active_order_id');
+        sessionStorage.removeItem('smartprint_current_view');
+      }
+    } catch (e) {}
+  }, [activeOrder, currentView]);
+
   // Reset all uploaded files and order state to start fresh
   const handleReset = () => {
+    try {
+      sessionStorage.removeItem('smartprint_active_order_id');
+      sessionStorage.removeItem('smartprint_current_view');
+    } catch (e) {}
     setFiles([]);
     setActiveOrder(null);
     setErrorMessage(null);

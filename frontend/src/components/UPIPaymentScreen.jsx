@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -7,19 +6,20 @@ import {
   Check,
   ShieldCheck,
   Clock,
-  Sparkles,
   Loader2,
   AlertCircle,
-  ExternalLink,
   RefreshCw,
   QrCode,
   Smartphone,
-  Receipt,
-  FileText,
+  Tablet,
   Printer,
-  Layers,
+  Sparkles,
 } from 'lucide-react';
-import { startPayment, verifyPayment, getPaymentStatus } from '../services/api';
+import {
+  startPayment,
+  createCheckout,
+  getPaymentStatus,
+} from '../services/api';
 
 const PAYMENT_TIMEOUT_SECONDS = 600; // 10 minutes
 
@@ -34,12 +34,20 @@ export default function UPIPaymentScreen({
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlError = urlParams.get('error');
+      if (urlError) {
+        setErrorMessage(decodeURIComponent(urlError));
+      }
+    } catch (e) {}
   }, []);
 
   const [paymentData, setPaymentData] = useState(null);
+  const [checkoutData, setCheckoutData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
-  const [referenceId, setReferenceId] = useState('');
   const [errorMessage, setErrorMessage] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
   const [timeLeft, setTimeLeft] = useState(PAYMENT_TIMEOUT_SECONDS);
@@ -48,44 +56,42 @@ export default function UPIPaymentScreen({
   const orderIdentifier = order?.order_id || order?.id || order?.order_number;
   const pollingTimerRef = useRef(null);
 
-  // Initialize Dynamic UPI payment
+  // Initialize Payment with PayU Gateway
   const initializePayment = async () => {
     if (!orderIdentifier) return;
     setLoading(true);
     setErrorMessage(null);
     try {
-      const data = await startPayment(orderIdentifier);
-      setPaymentData(data);
-      if (data.payment_status === 'PAID' || data.is_paid || data.status === 'PRINTING' || data.status === 'COMPLETED') {
-        setIsPaid(true);
-        if (onPaymentSuccess) {
-          onPaymentSuccess({ ...order, ...data, status: 'PRINTING' });
+      const [startRes, checkoutRes] = await Promise.allSettled([
+        startPayment(orderIdentifier),
+        createCheckout(orderIdentifier, 'payu'),
+      ]);
+
+      if (startRes.status === 'fulfilled') {
+        const data = startRes.value;
+        setPaymentData(data);
+        if (
+          data.payment_status === 'PAID' ||
+          data.is_paid ||
+          data.status === 'CONFIRMED' ||
+          data.status === 'PAID' ||
+          data.status === 'PRINTING' ||
+          data.status === 'COMPLETED'
+        ) {
+          setIsPaid(true);
+          if (onPaymentSuccess) {
+            onPaymentSuccess({ ...order, ...data, status: 'CONFIRMED', payment_status: 'PAID' });
+          }
+          return;
         }
       }
-    } catch (err) {
-      console.error('Failed to start payment:', err);
-      // Fallback client-side dynamic UPI generation if offline or demo
-      const upiId = 'smartprint@upi';
-      const upiName = 'SmartPrint Kiosk';
-      const amount = Number(order?.total_amount || 0).toFixed(2);
-      const orderNum = order?.order_number || order?.order_id || orderIdentifier || 'SP-ORDER';
-      const fallbackUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(
-        upiName
-      )}&am=${amount}&cu=INR&tn=${encodeURIComponent(
-        `SmartPrint ${orderNum}`
-      )}&tr=${orderNum}`;
 
-      setPaymentData({
-        order_id: orderIdentifier,
-        order_number: orderNum,
-        amount: Number(order?.total_amount || 0),
-        currency: order?.currency || 'INR',
-        payment_status: 'PAYMENT_PENDING',
-        upi_id: upiId,
-        upi_name: upiName,
-        upi_uri: fallbackUri,
-        qr_data: fallbackUri,
-      });
+      if (checkoutRes.status === 'fulfilled') {
+        const cData = checkoutRes.value;
+        setCheckoutData(cData);
+      }
+    } catch (err) {
+      console.error('Failed to initialize PayU payment:', err);
     } finally {
       setLoading(false);
     }
@@ -109,7 +115,7 @@ export default function UPIPaymentScreen({
     return () => clearInterval(timer);
   }, []);
 
-  // Real-time polling to detect payment verification
+  // Real-time polling to detect verified payment from PayU / Tablet scan
   useEffect(() => {
     if (isPaid || !orderIdentifier) return;
 
@@ -119,10 +125,12 @@ export default function UPIPaymentScreen({
         if (
           statusRes &&
           (statusRes.is_paid ||
+            statusRes.status === 'CONFIRMED' ||
             statusRes.status === 'PAID' ||
             statusRes.status === 'PRINTING' ||
             statusRes.status === 'COMPLETED' ||
-            statusRes.payment_status === 'PAID')
+            statusRes.payment_status === 'PAID' ||
+            statusRes.payment_status === 'SUCCESS')
         ) {
           clearInterval(pollingTimerRef.current);
           setIsPaid(true);
@@ -131,15 +139,16 @@ export default function UPIPaymentScreen({
               onPaymentSuccess({
                 ...order,
                 ...statusRes,
-                status: 'PRINTING',
+                status: 'CONFIRMED',
+                payment_status: 'PAID',
               });
             }
-          }, 350);
+          }, 400);
         }
       } catch (e) {
-        // Silent polling error (expected if connection blips)
+        // Silent polling error
       }
-    }, 3000);
+    }, 2000);
 
     return () => {
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
@@ -163,40 +172,75 @@ export default function UPIPaymentScreen({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // Payment Verification Handler
-  const handleVerifyPayment = async (customRef = null) => {
-    setErrorMessage(null);
-    setVerifying(true);
-    const refToUse = customRef !== null ? customRef : referenceId.trim();
+  // Secure redirect to official PayU Hosted Checkout interface
+  const redirectToPayU = (params) => {
+    if (!params) return;
+    const actionUrl =
+      params.action ||
+      checkoutData?.checkout_url ||
+      (checkoutData?.mode === 'live'
+        ? 'https://secure.payu.in/_payment'
+        : 'https://test.payu.in/_payment');
 
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = actionUrl;
+    form.style.display = 'none';
+
+    Object.entries(params).forEach(([key, val]) => {
+      if (key !== 'action' && val !== undefined && val !== null) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = String(val);
+        form.appendChild(input);
+      }
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+  };
+
+  // Manual status check handler
+  const handleCheckStatus = async () => {
+    if (!orderIdentifier || verifying) return;
+    setVerifying(true);
+    setErrorMessage(null);
     try {
-      const result = await verifyPayment(orderIdentifier, refToUse || null);
-      setIsPaid(true);
-      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
-      setTimeout(() => {
+      const statusRes = await getPaymentStatus(orderIdentifier);
+      if (
+        statusRes &&
+        (statusRes.is_paid ||
+          statusRes.status === 'CONFIRMED' ||
+          statusRes.status === 'PAID' ||
+          statusRes.status === 'PRINTING' ||
+          statusRes.status === 'COMPLETED' ||
+          statusRes.payment_status === 'PAID' ||
+          statusRes.payment_status === 'SUCCESS')
+      ) {
+        setIsPaid(true);
+        if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
         if (onPaymentSuccess) {
           onPaymentSuccess({
             ...order,
-            ...result,
-            status: 'PRINTING',
+            ...statusRes,
+            status: 'CONFIRMED',
+            payment_status: 'PAID',
           });
         }
-      }, 350);
+      } else {
+        setErrorMessage('Payment not yet detected. Please scan the QR code on the tablet and complete UPI payment.');
+      }
     } catch (err) {
-      console.error('Payment verification failed:', err);
-      setErrorMessage(
-        err?.response?.data?.detail ||
-          err?.message ||
-          'Payment verification failed. Please try again or simulate approval.'
-      );
+      setErrorMessage('Could not check status right now. Retrying automatically...');
     } finally {
       setVerifying(false);
     }
   };
 
-  const dynamicUpiUri = paymentData?.upi_uri || paymentData?.qr_data || '';
   const currencySymbol = order?.currency === 'INR' ? '₹' : order?.currency || '₹';
   const totalAmountFormatted = Number(order?.total_amount || 0).toFixed(2);
+  const orderNumberDisplay = order?.order_number || order?.order_id || orderIdentifier || 'SP-000000';
 
   return (
     <div className={`w-full ${isTablet ? 'max-w-2xl' : 'max-w-xl'} mx-auto animate-fade-in ${isTablet ? 'pb-4' : 'pb-10'}`}>
@@ -209,12 +253,12 @@ export default function UPIPaymentScreen({
           className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-brand-600 transition-colors disabled:opacity-50 p-1 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>{isTablet ? 'Cancel / Return to Welcome' : 'Adjust Options'}</span>
+          <span>Adjust Options</span>
         </button>
 
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-50 text-brand-700 text-xs font-bold border border-brand-200 shadow-sm">
-          <Sparkles className="w-3.5 h-3.5 text-brand-600" />
-          <span>{isTablet ? 'Tablet Kiosk • Dynamic UPI Scanner' : 'Step 3 of 4 • Dynamic UPI Payment'}</span>
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 shadow-sm">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Step 3 of 4 • PayU UPI Payment</span>
         </span>
       </div>
 
@@ -225,15 +269,13 @@ export default function UPIPaymentScreen({
           <div>
             <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 mb-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>NPCI UPI Secured</span>
+              <span>PayU India • Secure Gateway</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-              Pay via Dynamic UPI
+              PAYU UPI PAYMENT
             </h2>
             <p className="text-xs text-slate-500 font-medium">
-              {isTablet
-                ? 'Scan the QR code below with any UPI app on your phone to complete payment.'
-                : 'Amount is pre-filled. Scan or tap to complete payment.'}
+              Complete your UPI payment using the SmartPrint payment tablet.
             </p>
           </div>
 
@@ -251,15 +293,15 @@ export default function UPIPaymentScreen({
         </div>
 
         {/* Order Amount Highlight Box */}
-        <div className="my-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-brand-950 text-white shadow-md shadow-slate-900/10 flex items-center justify-between">
+        <div className="my-5 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950 text-white shadow-md shadow-slate-900/10 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Order {order?.order_number || order?.order_id || 'SP-000000'}
+                Order {orderNumberDisplay}
               </span>
               <button
                 type="button"
-                onClick={() => handleCopy(order?.order_number || order?.order_id, 'orderId')}
+                onClick={() => handleCopy(orderNumberDisplay, 'orderId')}
                 className="text-slate-400 hover:text-white transition-colors"
                 title="Copy Order ID"
               >
@@ -285,29 +327,45 @@ export default function UPIPaymentScreen({
             <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               {currencySymbol}{totalAmountFormatted}
             </span>
-            <span className="block text-[10px] font-bold text-brand-400 uppercase tracking-wider">
+            <span className="block text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
               Exact Amount
             </span>
           </div>
         </div>
 
-        {/* QR Code Presentation Area */}
-        <div className="flex flex-col items-center justify-center py-4 bg-slate-50/70 rounded-2xl border border-slate-200/80 my-4 text-center">
+        {/* Live Pending Status Banner */}
+        <div className="mb-4 p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <span className="font-semibold">
+              {isPaid ? 'Payment Confirmed!' : 'Waiting for payment...'}
+            </span>
+          </div>
+          <span className="text-[10px] font-mono text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full font-bold">
+            Live Polling Active
+          </span>
+        </div>
+
+        {/* REQUIRED INSTRUCTION BOX */}
+        <div className="flex flex-col items-center justify-center p-6 sm:p-8 bg-gradient-to-b from-slate-50 to-emerald-50/30 rounded-3xl border-2 border-emerald-500/20 my-4 text-center">
           {loading ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-3">
-              <Loader2 className="w-8 h-8 text-brand-600 animate-spin" />
+            <div className="py-8 flex flex-col items-center justify-center gap-3">
+              <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
               <p className="text-xs font-semibold text-slate-600">
-                Generating dynamic UPI QR code...
+                Connecting to SmartPrint Payment Kiosk...
               </p>
             </div>
           ) : timeLeft === 0 ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-3 p-6 text-center">
+            <div className="py-6 flex flex-col items-center justify-center gap-3 text-center">
               <AlertCircle className="w-10 h-10 text-rose-500" />
               <p className="text-sm font-bold text-slate-800">
                 Payment Session Expired
               </p>
               <p className="text-xs text-slate-500 max-w-xs">
-                Your payment session has timed out. Click below to regenerate a fresh QR code.
+                Your payment session has timed out. Click below to regenerate your session.
               </p>
               <button
                 type="button"
@@ -315,44 +373,58 @@ export default function UPIPaymentScreen({
                   setTimeLeft(PAYMENT_TIMEOUT_SECONDS);
                   initializePayment();
                 }}
-                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 text-white font-bold text-xs hover:bg-brand-700 transition-colors cursor-pointer"
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 transition-colors cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Refresh QR Code</span>
+                <span>Refresh Payment Session</span>
               </button>
             </div>
           ) : (
             <>
-              {/* Dynamic QR Code Frame */}
-              <div className="relative p-3.5 bg-white rounded-2xl shadow-sm border border-slate-200 inline-block">
-                <QRCodeSVG
-                  value={dynamicUpiUri}
-                  size={isTablet ? 250 : 210}
-                  level="H"
-                  includeMargin={true}
-                  imageSettings={{
-                    src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%232563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>',
-                    height: 28,
-                    width: 28,
-                    excavate: true,
-                  }}
-                />
+              {/* Tablet Icon graphic */}
+              <div className="relative mb-4 flex items-center justify-center">
+                <div className="w-20 h-20 rounded-2xl bg-emerald-100/80 border border-emerald-300 flex items-center justify-center text-emerald-700 shadow-inner">
+                  <Tablet className="w-10 h-10" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-md">
+                  <QrCode className="w-4 h-4" />
+                </div>
               </div>
 
-              {/* Scan Prompt */}
-              <p className="text-xs sm:text-sm font-extrabold text-slate-900 mt-3">
-                Scan with any UPI App
-              </p>
-              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                Amount ₹{totalAmountFormatted} will be automatically locked in your UPI app
+              {/* Exact instruction prompt */}
+              <h3 className="text-base sm:text-lg font-black text-slate-900 max-w-md leading-snug">
+                Please scan the QR code displayed on the SmartPrint payment tablet to complete your payment.
+              </h3>
+
+              <p className="text-xs text-slate-500 font-medium mt-2 max-w-sm">
+                The PayU dynamic QR code for <strong className="text-slate-800">{orderNumberDisplay}</strong> is active on the tablet screen next to the printer.
               </p>
 
-              {/* Supported UPI Apps Pills */}
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5 px-4">
-                {['Google Pay', 'PhonePe', 'Paytm', 'BHIM', 'Navi', 'Cred'].map((appName) => (
+              {/* How it works steps on kiosk */}
+              <div className="mt-5 w-full max-w-md grid grid-cols-1 sm:grid-cols-3 gap-2 text-left">
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
+                  <div className="text-[10px] font-bold text-emerald-700">STEP 1</div>
+                  <div className="text-xs font-semibold text-slate-800 mt-0.5">Look at Tablet</div>
+                  <div className="text-[10px] text-slate-500">Find the QR code for {orderNumberDisplay}</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
+                  <div className="text-[10px] font-bold text-emerald-700">STEP 2</div>
+                  <div className="text-xs font-semibold text-slate-800 mt-0.5">Scan with UPI</div>
+                  <div className="text-[10px] text-slate-500">Pay ₹{totalAmountFormatted} with your UPI app</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
+                  <div className="text-[10px] font-bold text-emerald-700">STEP 3</div>
+                  <div className="text-xs font-semibold text-slate-800 mt-0.5">Auto Confirm</div>
+                  <div className="text-[10px] text-slate-500">Printing starts automatically once paid</div>
+                </div>
+              </div>
+
+              {/* Supported UPI Apps */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5">
+                {['Google Pay', 'PhonePe', 'Paytm', 'BHIM UPI'].map((appName) => (
                   <span
                     key={appName}
-                    className="inline-flex items-center px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-bold text-slate-600 shadow-2xs"
+                    className="inline-flex items-center px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-[10px] font-bold text-emerald-800 shadow-2xs"
                   >
                     {appName}
                   </span>
@@ -360,104 +432,6 @@ export default function UPIPaymentScreen({
               </div>
             </>
           )}
-        </div>
-
-        {/* Direct Mobile Tap-to-Pay Button (User Mobile Website) */}
-        {dynamicUpiUri && timeLeft > 0 && !isTablet && (
-          <div className="my-4">
-            <a
-              href={dynamicUpiUri}
-              className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-5 rounded-2xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] transition-all shadow-md shadow-emerald-600/20 text-center cursor-pointer"
-            >
-              <Smartphone className="w-4 h-4" />
-              <span>Tap to Pay on Mobile (GPay / PhonePe / Paytm)</span>
-              <ExternalLink className="w-3.5 h-3.5 ml-0.5" />
-            </a>
-            <p className="text-[10px] text-center text-slate-400 mt-1.5 font-medium">
-              If browsing on mobile, tapping above will launch your installed UPI app directly
-            </p>
-          </div>
-        )}
-
-        {/* Tablet Kiosk Phone Scan Prompt */}
-        {dynamicUpiUri && timeLeft > 0 && isTablet && (
-          <div className="my-4 p-3.5 rounded-2xl bg-brand-50/70 border border-brand-100 flex items-center justify-center gap-2.5 text-brand-800 text-xs font-semibold text-center">
-            <Smartphone className="w-4 h-4 text-brand-600 shrink-0" />
-            <span>Open Google Pay, PhonePe, Paytm, or any UPI app on your phone and scan the QR code above.</span>
-          </div>
-        )}
-
-        {/* UPI Details Grid (Payee ID & Reference) */}
-        <div className="my-5 rounded-2xl border border-slate-200 bg-slate-50/70 divide-y divide-slate-200 text-xs">
-          <div className="p-3 sm:p-3.5 flex items-center justify-between">
-            <span className="text-slate-500 font-medium">Payee UPI ID:</span>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-slate-900">
-                {paymentData?.upi_id || 'smartprint@upi'}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleCopy(paymentData?.upi_id || 'smartprint@upi', 'upiId')}
-                className="p-1 rounded text-slate-400 hover:text-brand-600 hover:bg-white transition-colors cursor-pointer"
-                title="Copy UPI ID"
-              >
-                {copiedField === 'upiId' ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="p-3 sm:p-3.5 flex items-center justify-between">
-            <span className="text-slate-500 font-medium">Payee Name:</span>
-            <span className="font-semibold text-slate-800">
-              {paymentData?.upi_name || 'SmartPrint Kiosk'}
-            </span>
-          </div>
-
-          <div className="p-3 sm:p-3.5 flex items-center justify-between">
-            <span className="text-slate-500 font-medium">Exact Amount:</span>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-900 font-mono">
-                ₹{totalAmountFormatted}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleCopy(totalAmountFormatted, 'amount')}
-                className="p-1 rounded text-slate-400 hover:text-brand-600 hover:bg-white transition-colors cursor-pointer"
-                title="Copy Amount"
-              >
-                {copiedField === 'amount' ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Verification & Manual UTR Section */}
-        <div className="my-5 p-4 rounded-2xl bg-brand-50/50 border border-brand-100">
-          <label
-            htmlFor="upi-reference-input"
-            className="block text-xs font-bold text-slate-800 mb-1"
-          >
-            UPI Reference / UTR Number (Optional):
-          </label>
-          <input
-            id="upi-reference-input"
-            type="text"
-            value={referenceId}
-            onChange={(e) => setReferenceId(e.target.value)}
-            placeholder="e.g. 430129847192 (or leave blank to auto-verify)"
-            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
-          <p className="text-[11px] text-slate-500 mt-1.5 font-medium">
-            Once you have completed the payment in your UPI app, click below to verify and send your document to the printer queue.
-          </p>
         </div>
 
         {/* Error message */}
@@ -469,53 +443,58 @@ export default function UPIPaymentScreen({
         )}
 
         {/* Action Buttons */}
-        <div className="flex flex-col gap-2.5">
-          {/* Primary Verify Button */}
+        <div className="flex flex-col gap-2.5 mt-4">
+          {/* Primary Pay Online via PayU Gateway Button */}
+          {checkoutData?.payu_params && !isPaid && (
+            <button
+              id="payu-checkout-btn"
+              type="button"
+              onClick={() => redirectToPayU(checkoutData.payu_params)}
+              disabled={verifying || timeLeft === 0 || isPaid}
+              className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-6 rounded-2xl font-bold text-sm sm:text-base text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] transition-all shadow-md shadow-emerald-600/25 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span>Pay Online via PayU ({currencySymbol}{totalAmountFormatted})</span>
+            </button>
+          )}
+
+          {/* Check Status Button */}
           <button
-            id="verify-payment-btn"
+            id="check-payment-status-btn"
             type="button"
-            onClick={() => handleVerifyPayment(null)}
+            onClick={handleCheckStatus}
             disabled={verifying || loading || timeLeft === 0 || isPaid}
-            className="w-full inline-flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-base text-white bg-brand-600 hover:bg-brand-700 active:scale-[0.99] transition-all shadow-md shadow-brand-600/25 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className={`w-full inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl font-bold text-sm transition-all cursor-pointer ${
+              checkoutData?.payu_params && !isPaid
+                ? 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+                : 'text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/25'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isPaid ? (
               <>
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 animate-pulse" />
-                <span>Payment Verified! Starting Print Machine...</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 animate-pulse" />
+                <span>Payment Confirmed! Printing Order...</span>
               </>
             ) : verifying ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Verifying Payment...</span>
+                <span>Checking Payment Status...</span>
               </>
             ) : (
               <>
                 <CheckCircle2 className="w-5 h-5" />
-                <span>I Have Paid • Verify Payment</span>
+                <span>I Have Scanned on Tablet • Check Status</span>
               </>
             )}
           </button>
 
-          {/* Quick Simulation / Demo Button */}
-          <button
-            id="simulate-payment-btn"
-            type="button"
-            onClick={() => handleVerifyPayment(`DEMO-PAID-${Date.now()}`)}
-            disabled={verifying || loading || timeLeft === 0}
-            className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs text-brand-700 bg-brand-50 hover:bg-brand-100/80 border border-brand-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-brand-600" />
-            <span>Quick Test: Simulate Instant Payment</span>
-          </button>
-
-          {/* Back Button */}
+          {/* Cancel Button */}
           <button
             type="button"
             onClick={onCancel || onBackToOptions}
             disabled={verifying}
-            className="w-full py-2 px-4 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer text-center mt-1"
+            className="w-full py-2 px-4 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer text-center"
           >
-            {isTablet ? 'Cancel and Return to Welcome Screen' : 'Cancel and Return to Print Settings'}
+            Cancel and Return to Print Settings
           </button>
         </div>
       </div>

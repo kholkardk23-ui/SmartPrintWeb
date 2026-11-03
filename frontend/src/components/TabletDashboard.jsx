@@ -3,13 +3,16 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   getOrders,
   startPayment,
+  getPayUQR,
   verifyPayment,
   getPaymentStatus,
 } from "../services/api";
 import "./TabletDashboard.css";
 
 const REFRESH_INTERVAL = 3000;
-const CUSTOMER_WEBSITE_URL = "https://smart-print-web-orpin.vercel.app/";
+const CUSTOMER_WEBSITE_URL =
+  import.meta.env.VITE_CUSTOMER_WEBSITE_URL ||
+  "https://smart-print-web-orpin.vercel.app/";
 
 function getOrderKey(order) {
   const id = order?.id || order?.order_number || order?.order_id || "order";
@@ -26,8 +29,9 @@ function isOrderPaid(order) {
   const status = String(order?.status ?? "").toUpperCase();
   const paymentStatus = String(order?.payment_status ?? "").toUpperCase();
   return (
-    ["PAID", "QUEUED", "PRINTING", "COMPLETED"].includes(status) ||
+    ["CONFIRMED", "PAID", "QUEUED", "PRINTING", "COMPLETED"].includes(status) ||
     paymentStatus === "PAID" ||
+    paymentStatus === "SUCCESS" ||
     Boolean(order?.is_paid)
   );
 }
@@ -296,8 +300,8 @@ function OrderDetails({ order, onHome }) {
           </div>
         </div>
 
-        <div className="tablet-order-badge">
-          ORDER RECEIVED
+        <div className="tablet-order-badge" style={{ background: "#dcfce7", color: "#15803d", borderColor: "#86efac" }}>
+          ORDER CONFIRMED
         </div>
       </header>
 
@@ -306,9 +310,9 @@ function OrderDetails({ order, onHome }) {
           <div className="tablet-success-icon">✓</div>
 
           <div>
-            <span className="tablet-eyebrow">NEW PRINT ORDER</span>
+            <span className="tablet-eyebrow">CONFIRMED PRINT ORDER</span>
             <h2>{getOrderNumber(order)}</h2>
-            <p>Review the details of your print order below.</p>
+            <p>Review the details of your confirmed print order below.</p>
           </div>
         </div>
 
@@ -335,26 +339,31 @@ function OrderDetails({ order, onHome }) {
             <div className="tablet-detail-divider" />
 
             <div className="tablet-detail-row">
-              <span>Pages</span>
+              <span>Total Pages</span>
               <strong>{getPageCount(order)}</strong>
             </div>
 
             <div className="tablet-detail-row">
-              <span>Copies</span>
+              <span>Number of Copies</span>
               <strong>{getCopies(order)}</strong>
             </div>
           </section>
 
           <section className="tablet-info-card">
-            <h3>⚙️ Print settings</h3>
+            <h3>⚙️ Print Settings & Verification</h3>
 
             <div className="tablet-setting-item">
-              <span className="tablet-setting-label">Colour mode</span>
+              <span className="tablet-setting-label">Order Number</span>
+              <strong style={{ fontFamily: "monospace", letterSpacing: "0.5px" }}>{getOrderNumber(order)}</strong>
+            </div>
+
+            <div className="tablet-setting-item">
+              <span className="tablet-setting-label">Print Type</span>
               <strong>{getColorMode(order)}</strong>
             </div>
 
             <div className="tablet-setting-item">
-              <span className="tablet-setting-label">Print sides</span>
+              <span className="tablet-setting-label">Double-sided or Single-sided</span>
               <strong>{getPrintSides(order)}</strong>
             </div>
 
@@ -368,17 +377,29 @@ function OrderDetails({ order, onHome }) {
             <div className="tablet-detail-divider" />
 
             <div className="tablet-setting-item">
-              <span className="tablet-setting-label">Order time</span>
-              <strong>{formatDate(order.created_at)}</strong>
+              <span className="tablet-setting-label">Payment Status</span>
+              <strong className="tablet-status status-paid">
+                PAID
+              </strong>
             </div>
 
             <div className="tablet-setting-item">
-              <span className="tablet-setting-label">Order status</span>
-              <strong
-                className={`tablet-status status-${getStatusClass(order)}`}
-              >
-                {getStatus(order)}
+              <span className="tablet-setting-label">Order Status</span>
+              <strong className="tablet-status status-confirmed">
+                CONFIRMED
               </strong>
+            </div>
+
+            {order?.payment_reference && (
+              <div className="tablet-setting-item">
+                <span className="tablet-setting-label">Transaction Ref</span>
+                <strong style={{ fontFamily: "monospace", fontSize: "12px" }}>{order.payment_reference}</strong>
+              </div>
+            )}
+
+            <div className="tablet-setting-item">
+              <span className="tablet-setting-label">Order Time</span>
+              <strong>{formatDate(order.created_at)}</strong>
             </div>
           </section>
         </div>
@@ -438,35 +459,28 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
       if (!orderIdentifier) return;
       setLoading(true);
       try {
-        const data = await startPayment(orderIdentifier);
+        // Fetch official PayU dynamic payment QR for this order
+        const data = await getPayUQR(orderIdentifier);
         if (!active) return;
         setPaymentData(data);
         if (
           data.payment_status === "PAID" ||
+          data.payment_status === "SUCCESS" ||
           data.is_paid ||
+          data.status === "CONFIRMED" ||
+          data.status === "PAID" ||
           data.status === "PRINTING" ||
           data.status === "COMPLETED"
         ) {
-          onPaymentSuccess({ ...order, ...data, status: "PRINTING" });
+          onPaymentSuccess({ ...order, ...data, status: "CONFIRMED", payment_status: "PAID" });
         }
       } catch (err) {
-        console.error("Tablet startPayment error:", err);
-        // Fallback dynamic UPI URI
-        const upiId = "9823555453@kotakbank";
-        const upiName = "SmartPrint Kiosk";
-        const amount = Number(order?.total_amount || 0).toFixed(2);
-        const orderNum = getOrderNumber(order);
-        const fallbackUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(
-          upiName
-        )}&am=${amount}&cu=INR&tn=${encodeURIComponent(
-          `SmartPrint ${orderNum}`
-        )}&tr=${orderNum}`;
-
-        if (active) {
-          setPaymentData({
-            upi_uri: fallbackUri,
-            qr_data: fallbackUri,
-          });
+        console.warn("PayU getPayUQR notice, trying startPayment:", err);
+        try {
+          const fallbackData = await startPayment(orderIdentifier);
+          if (active) setPaymentData(fallbackData);
+        } catch (e) {
+          console.error("Payment QR init error:", e);
         }
       } finally {
         if (active) setLoading(false);
@@ -490,13 +504,15 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
         if (
           statusRes &&
           (statusRes.is_paid ||
+            statusRes.status === "CONFIRMED" ||
             statusRes.status === "PAID" ||
             statusRes.status === "PRINTING" ||
             statusRes.status === "COMPLETED" ||
-            statusRes.payment_status === "PAID")
+            statusRes.payment_status === "PAID" ||
+            statusRes.payment_status === "SUCCESS")
         ) {
           clearInterval(pollingRef.current);
-          onPaymentSuccess({ ...order, ...statusRes, status: "PRINTING" });
+          onPaymentSuccess({ ...order, ...statusRes, status: "CONFIRMED", payment_status: "PAID" });
         }
       } catch (e) {
         // silent polling error
@@ -549,19 +565,19 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
         </div>
 
         <div className="tablet-order-badge tablet-payment-badge">
-          💳 AWAITING PAYMENT
+          SMARTPRINT PAYMENT
         </div>
       </header>
 
       <div className="tablet-upi-container">
         {/* Amount Display */}
         <div className="tablet-upi-amount-card">
-          <span className="tablet-upi-order-tag">{getOrderNumber(order)}</span>
+          <span className="tablet-upi-order-tag">Order: {getOrderNumber(order)}</span>
           <h2 className="tablet-upi-amount-value">
-            {formatAmount(order?.total_amount)}
+            Amount: {formatAmount(order?.total_amount)}
           </h2>
           <span className="tablet-upi-amount-label">
-            Scan QR code with any UPI app to pay
+            PayU India • Secure UPI Payment
           </span>
         </div>
 
@@ -589,7 +605,7 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
           </div>
 
           <span className="tablet-upi-qr-prompt">
-            Scan to Pay {formatAmount(order?.total_amount)}
+            Scan using your UPI App
           </span>
 
           <div className="tablet-upi-apps">
@@ -604,7 +620,7 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
         {/* Live Status Hint */}
         <div className="tablet-upi-status-hint">
           <span className="tablet-upi-pulse-dot" />
-          <span>Awaiting payment verification from phone...</span>
+          <span>Waiting for payment...</span>
         </div>
 
         {errorMessage && (
@@ -717,9 +733,17 @@ export default function TabletDashboard() {
       setConnectionError(false);
       setLastUpdated(new Date().toISOString());
 
-      // On first load, remember old orders but show the newest order if it
-      // was created recently. This also handles opening/reloading the tablet
-      // shortly after the customer confirms an order.
+      // Filter confirmed/paid orders and pending payment orders for tablet kiosk
+      const confirmedOrders = sortedOrders.filter(isOrderPaid);
+      const pendingOrders = sortedOrders.filter(
+        (o) =>
+          !isOrderPaid(o) &&
+          ["PAYMENT_PENDING", "OPTIONS_SELECTED", "CREATED"].includes(
+            String(o?.status || "").toUpperCase()
+          )
+      );
+
+      // On first load, display latest pending order or confirmed order if not dismissed
       if (!initialized.current) {
         sortedOrders.forEach((order) => {
           seenOrderKeys.current.add(getOrderKey(order));
@@ -727,65 +751,61 @@ export default function TabletDashboard() {
 
         initialized.current = true;
 
-        const newestOrder = sortedOrders[0];
-        const createdAt = Date.parse(newestOrder?.created_at ?? "");
-        const isRecent =
-          Number.isFinite(createdAt) &&
-          createdAt > 0 &&
-          Date.now() - createdAt <= 10 * 60 * 1000 &&
-          createdAt <= Date.now() + 60 * 1000;
-
-        const newestKey = getOrderKey(newestOrder);
-        const newestId = getOrderId(newestOrder);
-
-        if (
-          newestOrder &&
-          isRecent &&
-          !dismissedOrderKeys.current.has(newestKey) &&
-          !dismissedOrderIds.current.has(newestId)
-        ) {
-          activeOrderKey.current = newestKey;
-          setActiveOrder(newestOrder);
+        const targetOrder = pendingOrders[0] || confirmedOrders[0];
+        if (targetOrder) {
+          const targetId = getOrderId(targetOrder);
+          const targetKey = getOrderKey(targetOrder);
+          if (
+            !dismissedOrderIds.current.has(targetId) &&
+            !dismissedOrderKeys.current.has(targetKey)
+          ) {
+            activeOrderKey.current = targetKey;
+            setActiveOrder(targetOrder);
+          }
         }
-
         return;
       }
 
-      // Find orders that appeared after the previous poll.
-      const newOrders = sortedOrders.filter((order) => {
-        const key = getOrderKey(order);
-        const id = getOrderId(order);
-
-        return (
-          !seenOrderKeys.current.has(key) &&
-          !dismissedOrderKeys.current.has(key) &&
-          !dismissedOrderIds.current.has(id)
-        );
-      });
-
-      // Mark returned orders as seen to avoid repeatedly triggering them.
-      sortedOrders.forEach((order) => {
-        seenOrderKeys.current.add(getOrderKey(order));
-      });
-
-      // If viewing an active order, update its state live when payment or status changes
+      // If already viewing an order, update its details live
       if (activeOrderRef.current) {
         const activeId = getOrderId(activeOrderRef.current);
-        const matchingCurrent = sortedOrders.find(
-          (o) => getOrderId(o) === activeId
-        );
-        if (
-          matchingCurrent &&
-          (matchingCurrent.status !== activeOrderRef.current.status ||
-            Boolean(matchingCurrent.is_paid) !== Boolean(activeOrderRef.current.is_paid))
-        ) {
-          activeOrderKey.current = getOrderKey(matchingCurrent);
-          setActiveOrder(matchingCurrent);
+        const updated = sortedOrders.find((o) => getOrderId(o) === activeId);
+        if (updated) {
+          setActiveOrder(updated);
         }
-      } else if (newOrders.length > 0) {
-        const newestOrder = newOrders[0];
-        activeOrderKey.current = getOrderKey(newestOrder);
-        setActiveOrder(newestOrder);
+
+        // If the current order is paid, check if a newer pending order arrived for payment
+        if (isOrderPaid(activeOrderRef.current)) {
+          const newestPending = pendingOrders[0];
+          if (
+            newestPending &&
+            getOrderId(newestPending) !== activeId &&
+            !dismissedOrderIds.current.has(getOrderId(newestPending))
+          ) {
+            activeOrderKey.current = getOrderKey(newestPending);
+            setActiveOrder(newestPending);
+          }
+        }
+      } else {
+        // On Welcome Screen: Prioritize any pending order waiting for payment
+        const newestPending = pendingOrders[0];
+        if (
+          newestPending &&
+          !dismissedOrderIds.current.has(getOrderId(newestPending))
+        ) {
+          activeOrderKey.current = getOrderKey(newestPending);
+          setActiveOrder(newestPending);
+        } else {
+          // Otherwise display latest confirmed order if not dismissed
+          const newestConfirmed = confirmedOrders[0];
+          if (
+            newestConfirmed &&
+            !dismissedOrderIds.current.has(getOrderId(newestConfirmed))
+          ) {
+            activeOrderKey.current = getOrderKey(newestConfirmed);
+            setActiveOrder(newestConfirmed);
+          }
+        }
       }
     } catch (error) {
       console.error("Tablet dashboard polling error:", error);

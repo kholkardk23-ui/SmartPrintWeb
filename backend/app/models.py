@@ -31,6 +31,7 @@ class OrderStatus(str, enum.Enum):
     OPTIONS_SELECTED = "OPTIONS_SELECTED"
     PAYMENT_PENDING = "PAYMENT_PENDING"
     PAID = "PAID"
+    CONFIRMED = "CONFIRMED"
     QUEUED = "QUEUED"
     PRINTING = "PRINTING"
     COMPLETED = "COMPLETED"
@@ -198,6 +199,45 @@ class Order(Base):
         nullable=False,
         default=OrderStatus.OPTIONS_SELECTED.value,
     )
+
+    # --------------------------------------------------------
+    # Payment fields
+    # --------------------------------------------------------
+    payment_status = Column(
+        String(50),
+        nullable=True,
+        default="PENDING",
+    )
+
+    payment_reference = Column(
+        String(100),
+        nullable=True,
+    )
+
+    payment_timestamp = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    payment_session_id = Column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    is_paid = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    @property
+    def transaction_id(self):
+        return self.payment_reference
+
+    @property
+    def paid_at(self):
+        return self.payment_timestamp
 
     created_at = Column(
         DateTime,

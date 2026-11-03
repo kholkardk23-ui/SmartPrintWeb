@@ -6,14 +6,38 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
+    disk:
+      name: smartprint-uploads
+      mountPath: /data/uploads
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.13
+      - key: UPLOAD_DIR
+        value: /data/uploads
       - key: PAYMENT_ENABLED
         value: "true"
       - key: PAYMENT_PROVIDER
-        value: "demo"
+        value: "payu"
+      - key: PAYU_MODE
+        value: "test"
       - key: UPI_ID
-        value: "smartprint@upi"
+        value: "9823555453@kotakbank"
       - key: UPI_NAME
         value: "SmartPrint Kiosk"
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: BACKEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PAYU_MERCHANT_KEY
+        sync: false
+      - key: PAYU_MERCHANT_SALT
+        sync: false
+      - key: PAYU_PAYMENT_URL
+        value: "https://test.payu.in/_payment"
+      - key: PAYU_VERIFY_URL
+        value: "https://test.payu.in/merchant/postservice.php?form=2"

@@ -1,4 +1,5 @@
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -101,6 +102,11 @@ class OrderCreateRequest(BaseModel):
         description="Page range ('all' or e.g. '1-3, 5, 7-9')"
     )
 
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        description="Optional client-provided idempotency key to prevent duplicate orders",
+    )
+
     @model_validator(mode="before")
     @classmethod
     def unify_file_ids(cls, values: Any) -> Any:
@@ -173,6 +179,14 @@ class OrderResponse(BaseModel):
     # Current order status
     status: str
 
+    # Payment information
+    payment_status: Optional[str] = "PENDING"
+    payment_reference: Optional[str] = None
+    payment_timestamp: Optional[datetime] = None
+    payment_session_id: Optional[str] = None
+    is_paid: bool = False
+    created_at: Optional[datetime] = None
+
 
 # ============================================================
 # PAYMENT START
@@ -204,6 +218,26 @@ class PaymentVerifyRequest(BaseModel):
         max_length=100,
         description="Payment transaction/reference ID (e.g. UTR). Auto-generated if omitted in demo mode.",
     )
+    razorpay_payment_id: Optional[str] = Field(
+        default=None,
+        description="Razorpay payment ID from Checkout handler",
+    )
+    razorpay_order_id: Optional[str] = Field(
+        default=None,
+        description="Razorpay order ID from Checkout handler",
+    )
+    razorpay_signature: Optional[str] = Field(
+        default=None,
+        description="Razorpay HMAC signature from Checkout handler",
+    )
+
+
+class RazorpayVerifyRequest(BaseModel):
+    """Direct request to verify Razorpay payment signatures."""
+
+    razorpay_payment_id: str = Field(..., description="Razorpay payment ID (pay_...)")
+    razorpay_order_id: str = Field(..., description="Razorpay order ID (order_...)")
+    razorpay_signature: str = Field(..., description="HMAC-SHA256 signature from Razorpay Checkout")
 
 
 # ============================================================
@@ -220,6 +254,7 @@ class PaymentVerifyResponse(BaseModel):
     payment_status: str
     order_status: str
     payment_reference: Optional[str] = None
+    payment_timestamp: Optional[datetime] = None
 
 
 # ============================================================
@@ -234,13 +269,18 @@ class PaymentCheckoutResponse(BaseModel):
     amount: float
     currency: str
 
-    # "cashfree" -> open the Cashfree checkout with payment_session_id
+    # "razorpay" -> open Razorpay Checkout with razorpay_order_id and razorpay_key_id
+    # "cashfree" -> open Cashfree checkout with payment_session_id
     # "demo"     -> no gateway; the backend confirms the payment automatically
     provider: str
     mode: str
 
+    razorpay_order_id: Optional[str] = None
+    razorpay_key_id: Optional[str] = None
+
     payment_session_id: Optional[str] = None
     checkout_url: Optional[str] = None
+    payu_params: Optional[Dict[str, Any]] = None
 
     upi_id: str
     upi_name: str
@@ -265,6 +305,9 @@ class PaymentStatusResponse(BaseModel):
     currency: str
     status: str
     payment_status: str
+    payment_reference: Optional[str] = None
+    payment_timestamp: Optional[datetime] = None
+    payment_session_id: Optional[str] = None
     upi_id: str
     upi_name: str
     upi_uri: Optional[str] = None

@@ -133,10 +133,42 @@ export const startPayment = async (orderId) => {
   return response.data;
 };
 
-// Verify payment for order
+// Generate/Get PayU Dynamic QR for order (used by tablet payment display)
+export const getPayUQR = async (orderId) => {
+  const response = await api.post(`/api/payments/${orderId}/qr`);
+  return response.data;
+};
+
+// Create automatic checkout session (PayU / YouPI / Razorpay / Cashfree / Demo)
+export const createCheckout = async (orderId, provider = null) => {
+  const url = provider
+    ? `/api/payments/${orderId}/checkout?provider=${provider}`
+    : `/api/payments/${orderId}/checkout`;
+  const response = await api.post(url);
+  return response.data;
+};
+
+// Verify payment for order (supports UTR string or Razorpay signature object)
 export const verifyPayment = async (orderId, paymentReference = null) => {
-  const payload = paymentReference ? { payment_reference: paymentReference } : {};
+  let payload = {};
+  if (paymentReference && typeof paymentReference === "object") {
+    payload = paymentReference;
+  } else if (paymentReference) {
+    payload = { payment_reference: paymentReference };
+  }
   const response = await api.post(`/api/payments/${orderId}/verify`, payload);
+  return response.data;
+};
+
+// Verify PayU payment response directly
+export const verifyPayUPayment = async (orderId, payuData) => {
+  const response = await api.post(`/api/payments/${orderId}/verify-payu`, payuData);
+  return response.data;
+};
+
+// Verify Razorpay payment signature directly
+export const verifyRazorpayPayment = async (orderId, razorpayData) => {
+  const response = await api.post(`/api/payments/${orderId}/verify-razorpay`, razorpayData);
   return response.data;
 };
 
@@ -158,7 +190,11 @@ const apiService = {
   healthCheck,
   checkHealth,
   startPayment,
+  getPayUQR,
+  createCheckout,
   verifyPayment,
+  verifyPayUPayment,
+  verifyRazorpayPayment,
   getPaymentStatus,
 };
 

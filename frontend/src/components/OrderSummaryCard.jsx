@@ -41,9 +41,12 @@ export default function OrderSummaryCard({
 
   const currencySymbol = order.currency === 'INR' ? '₹' : order.currency;
   const isPaid =
+    order.status === 'CONFIRMED' ||
     order.status === 'PAID' ||
     order.status === 'PRINTING' ||
     order.status === 'COMPLETED' ||
+    order.payment_status === 'PAID' ||
+    order.payment_status === 'SUCCESS' ||
     Boolean(order.is_paid);
 
   return (
@@ -81,11 +84,11 @@ export default function OrderSummaryCard({
             <CheckCircle2 className="w-8 h-8" />
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            {isPaid ? 'Payment Verified • PDF Printing in Progress' : 'Order Created Successfully!'}
+            {isPaid ? 'Payment Successful! Your Order Is Confirmed.' : 'Order Created Successfully!'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
             {isPaid
-              ? 'Your UPI payment was verified and your document has started printing at the kiosk'
+              ? 'Your UPI payment was verified and your order is confirmed on the kiosk'
               : 'Your print order is verified and waiting for payment'}
           </p>
 

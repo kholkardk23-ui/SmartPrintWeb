@@ -1,6 +1,7 @@
 import uuid
 import logging
 import re
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -164,6 +165,14 @@ def build_order_response(
     primary_file_id = documents[0].file_id if documents else order.file_id
     primary_filename = documents[0].filename if documents else None
 
+    norm_status = normalize_status(order.status)
+    stored_payment_status = getattr(order, "payment_status", None)
+    is_paid = (
+        norm_status in ("CONFIRMED", "PAID", "QUEUED", "PRINTING", "COMPLETED")
+        or stored_payment_status in ("PAID", "SUCCESS")
+    )
+    resolved_payment_status = "PAID" if is_paid else (stored_payment_status or "PENDING")
+
     return OrderResponse(
         id=order.id,
         order_id=order.order_number,
@@ -181,7 +190,12 @@ def build_order_response(
         price_per_page=order.price_per_page,
         total_amount=order.total_amount,
         currency=order.currency,
-        status=normalize_status(order.status),
+        status=norm_status,
+        payment_status=resolved_payment_status,
+        payment_reference=getattr(order, "payment_reference", None),
+        payment_timestamp=getattr(order, "payment_timestamp", None),
+        is_paid=is_paid,
+        created_at=order.created_at,
     )
 
 
@@ -309,6 +323,42 @@ def create_order(
                 }
             )
 
+        # Check for existing duplicate pending order
+        cutoff_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=15)
+        existing_pending = (
+            db.query(Order)
+            .filter(
+                Order.created_at >= cutoff_time,
+                Order.status.in_([
+                    OrderStatus.CREATED.value,
+                    OrderStatus.OPTIONS_SELECTED.value,
+                    OrderStatus.PAYMENT_PENDING.value,
+                    "CREATED",
+                    "OPTIONS_SELECTED",
+                    "PAYMENT_PENDING",
+                ]),
+                Order.copies == request.copies,
+                Order.color_mode == request.color_mode,
+                Order.duplex == request.duplex,
+                Order.page_range == request.page_range,
+            )
+            .order_by(Order.created_at.desc())
+            .all()
+        )
+
+        for candidate in existing_pending:
+            cand_files = (
+                [of.file_id for of in candidate.order_files]
+                if candidate.order_files
+                else ([candidate.file_id] if candidate.file_id else [])
+            )
+            if cand_files == file_ids:
+                logger.info(
+                    "Reusing existing pending order %s to prevent duplicate order",
+                    candidate.order_number or candidate.id,
+                )
+                return build_order_response(candidate, db)
+
         # 4. Generate IDs and customer-facing order number
         internal_order_id = str(uuid.uuid4())
 
@@ -329,6 +379,7 @@ def create_order(
             total_amount=round(total_amount, 2),
             currency=currency,
             status=OrderStatus.CREATED.value,
+            payment_status="PENDING",
         )
 
         db.add(order)
@@ -399,18 +450,20 @@ def create_order(
     response_model=OrderResponse,
 )
 def get_latest_order(
+    confirmed_only: bool = False,
     db: Session = Depends(get_db),
 ):
     """
     Return the latest order by customer-facing order number.
     """
+    query = db.query(Order).filter(Order.order_number.isnot(None))
+    if confirmed_only:
+        query = query.filter(
+            (Order.status.in_(["CONFIRMED", "PAID", "QUEUED", "PRINTING", "COMPLETED"]))
+            | (Order.payment_status.in_(["PAID", "SUCCESS"]))
+        )
 
-    order = (
-        db.query(Order)
-        .filter(Order.order_number.isnot(None))
-        .order_by(Order.order_number.desc())
-        .first()
-    )
+    order = query.order_by(Order.order_number.desc()).first()
 
     if not order:
         raise HTTPException(

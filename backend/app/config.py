@@ -27,15 +27,40 @@ class Settings(BaseSettings):
 
     # Dynamic UPI Configuration
     PAYMENT_ENABLED: bool = True
-    UPI_ID: str = "smartprint@upi"
+    UPI_ID: str = "9823555453@kotakbank"
     UPI_NAME: str = "SmartPrint Kiosk"
 
+    # PayU Payment Gateway (Hosted Checkout)
+    PAYU_MODE: str = "test"
+    PAYU_MERCHANT_KEY: str = ""
+    PAYU_MERCHANT_SALT: str = ""
+    PAYU_PAYMENT_URL: str = ""
+    PAYU_VERIFY_URL: str = ""
+    PAYU_SUCCESS_URL: str = ""
+    PAYU_FAILURE_URL: str = ""
+    FRONTEND_URL: str = "http://localhost:5173"
+    BACKEND_URL: str = "http://localhost:8000"
+
     # Automatic payment verification
-    # auto     -> use Cashfree when credentials exist, otherwise demo mode
+    # auto     -> use Razorpay when credentials exist, then Cashfree, otherwise demo mode
+    # razorpay -> always use Razorpay (errors if credentials are missing)
     # cashfree -> always use Cashfree (errors if credentials are missing)
     # demo     -> never contact a gateway (useful for local demos/tests)
     PAYMENT_PROVIDER: str = "auto"
     DEMO_AUTO_VERIFY_SECONDS: int = 10
+
+    # YouPI-PG Gateway (Local / Self-Hosted UPI Observation Engine)
+    YOUPI_API_BASE_URL: str = "http://localhost:6100"
+    YOUPI_CHECKOUT_BASE_URL: str = "http://localhost:7000"
+    YOUPI_MERCHANT_ID: str = "00000000-0000-0000-0000-000000000001"
+    YOUPI_ADMIN_API_TOKEN: str = "9f250f27538f134047993c63dca65cddf8d39e351fa2bff10be236ee2c2ca25c"
+    YOUPI_WEBHOOK_SECRET: str = "youpi_test_webhook_secret_key_32bytes_long!"
+    YOUPI_AUTO_ACTIVATE: bool = True
+
+    # Razorpay Payment Gateway
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
 
     # Cashfree Payment Gateway (sandbox by default)
     CASHFREE_ENV: str = "sandbox"  # sandbox | production
@@ -71,6 +96,30 @@ class Settings(BaseSettings):
         return self.MAX_FILE_SIZE_MB * 1024 * 1024
 
     @property
+    def payu_configured(self) -> bool:
+        """True when both PayU Key and Salt are present."""
+        return bool(
+            (self.PAYU_MERCHANT_KEY or "").strip()
+            and (self.PAYU_MERCHANT_SALT or "").strip()
+        )
+
+    @property
+    def youpi_configured(self) -> bool:
+        """True when YouPI-PG API URL and merchant ID are present."""
+        return bool(
+            (self.YOUPI_API_BASE_URL or "").strip()
+            and (self.YOUPI_MERCHANT_ID or "").strip()
+        )
+
+    @property
+    def razorpay_configured(self) -> bool:
+        """True when both Razorpay API credentials are present."""
+        return bool(
+            (self.RAZORPAY_KEY_ID or "").strip()
+            and (self.RAZORPAY_KEY_SECRET or "").strip()
+        )
+
+    @property
     def cashfree_configured(self) -> bool:
         """True when both Cashfree API credentials are present."""
         return bool(
@@ -83,8 +132,17 @@ class Settings(BaseSettings):
         """Resolve which payment provider should be used."""
         provider = (self.PAYMENT_PROVIDER or "auto").strip().lower()
 
-        if provider in ("cashfree", "demo"):
+        if provider in ("payu", "youpi", "razorpay", "cashfree", "demo"):
             return provider
+
+        if self.payu_configured:
+            return "payu"
+
+        if self.razorpay_configured:
+            return "razorpay"
+
+        if self.youpi_configured:
+            return "youpi"
 
         return "cashfree" if self.cashfree_configured else "demo"
 
@@ -105,7 +163,7 @@ class Settings(BaseSettings):
         )
 
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
+        env_file=(".env", "../.env", "backend/.env", "../backend/.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )

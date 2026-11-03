@@ -722,6 +722,7 @@
   text-transform: capitalize;
 }
 
+.status-confirmed,
 .status-paid,
 .status-completed,
 .status-printing,
