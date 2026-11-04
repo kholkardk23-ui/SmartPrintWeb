@@ -4,7 +4,7 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     disk:
       name: smartprint-uploads
@@ -28,11 +28,11 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: FRONTEND_URL
-        sync: false
+        value: "https://smart-print-web-gules.vercel.app"
       - key: BACKEND_URL
-        sync: false
+        value: "https://smartprintweb.onrender.com"
       - key: CORS_ORIGINS
-        sync: false
+        value: "https://smart-print-web-gules.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
       - key: PAYU_MERCHANT_KEY
         sync: false
       - key: PAYU_MERCHANT_SALT
@@ -41,3 +41,7 @@ services:
         value: "https://test.payu.in/_payment"
       - key: PAYU_VERIFY_URL
         value: "https://test.payu.in/merchant/postservice.php?form=2"
+      - key: PAYU_SUCCESS_URL
+        value: "https://smartprintweb.onrender.com/api/payments/payu/response"
+      - key: PAYU_FAILURE_URL
+        value: "https://smartprintweb.onrender.com/api/payments/payu/response"

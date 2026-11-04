@@ -26,17 +26,27 @@ class PayUError(Exception):
 
 def get_payu_payment_url() -> str:
     """Return the authoritative PayU Hosted Checkout action endpoint."""
-    if (settings.PAYU_PAYMENT_URL or "").strip():
-        return settings.PAYU_PAYMENT_URL.strip()
     mode = (settings.PAYU_MODE or "test").strip().lower()
+    custom_url = (settings.PAYU_PAYMENT_URL or "").strip()
+    if custom_url:
+        if mode in ("live", "production") and "test.payu.in" in custom_url:
+            return "https://secure.payu.in/_payment"
+        if mode == "test" and "secure.payu.in" in custom_url:
+            return "https://test.payu.in/_payment"
+        return custom_url
     return "https://secure.payu.in/_payment" if mode in ("live", "production") else "https://test.payu.in/_payment"
 
 
 def get_payu_verify_url() -> str:
     """Return the authoritative PayU Postservice transaction verification endpoint."""
-    if (settings.PAYU_VERIFY_URL or "").strip():
-        return settings.PAYU_VERIFY_URL.strip()
     mode = (settings.PAYU_MODE or "test").strip().lower()
+    custom_url = (settings.PAYU_VERIFY_URL or "").strip()
+    if custom_url:
+        if mode in ("live", "production") and "test.payu.in" in custom_url:
+            return "https://info.payu.in/merchant/postservice.php?form=2"
+        if mode == "test" and "info.payu.in" in custom_url:
+            return "https://test.payu.in/merchant/postservice.php?form=2"
+        return custom_url
     return (
         "https://info.payu.in/merchant/postservice.php?form=2"
         if mode in ("live", "production")

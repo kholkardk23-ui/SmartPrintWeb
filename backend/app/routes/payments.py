@@ -272,6 +272,15 @@ def create_checkout(
         )
 
     if chosen_provider == "payu":
+        if not settings.payu_configured:
+            logger.warning(
+                "PayU checkout requested for order '%s', but PayU credentials are not configured.",
+                order.order_number or order.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="PayU payment gateway is not configured. Please set PAYU_MERCHANT_KEY and PAYU_MERCHANT_SALT in environment variables.",
+            )
         try:
             txnid = payu_service.generate_txnid(order)
             if getattr(order, "payment_session_id", None) != txnid:
@@ -280,6 +289,12 @@ def create_checkout(
                 db.refresh(order)
             payu_data = payu_service.prepare_payment_payload(order)
             qr_res = payu_service.generate_payu_dynamic_qr(order)
+        except payu_service.PayUError as exc:
+            logger.warning("PayU configuration error for order %s: %s", order.id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"PayU payment gateway configuration error: {exc}",
+            )
         except Exception as exc:
             logger.exception("Could not initialize PayU payment for %s: %s", order.id, exc)
             raise HTTPException(
@@ -427,6 +442,15 @@ def get_order_qr(order_id: str, db: Session = Depends(get_db)):
             message="Payment already received.",
         )
 
+    if not settings.payu_configured:
+        logger.warning(
+            "PayU QR requested for order '%s', but PayU credentials are not configured.",
+            order.order_number or order.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PayU payment gateway is not configured. Please set PAYU_MERCHANT_KEY and PAYU_MERCHANT_SALT in environment variables.",
+        )
     try:
         qr_info = payu_service.generate_payu_dynamic_qr(order)
         txnid = qr_info.get("txnid")
@@ -434,6 +458,12 @@ def get_order_qr(order_id: str, db: Session = Depends(get_db)):
             order.payment_session_id = txnid
             db.commit()
             db.refresh(order)
+    except payu_service.PayUError as exc:
+        logger.warning("PayU error generating QR for %s: %s", order.id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"PayU payment gateway configuration error: {exc}",
+        )
     except Exception as exc:
         logger.exception("Could not generate PayU dynamic QR for %s: %s", order.id, exc)
         raise HTTPException(
@@ -536,6 +566,11 @@ def verify_payu_payment(
     Validates PayU response hash, independently verifies with PayU Postservice API,
     and marks order PAID.
     """
+    if not settings.payu_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PayU payment gateway is not configured on this server.",
+        )
     order = find_order(db, order_id)
     if not order:
         raise HTTPException(
@@ -924,6 +959,13 @@ async def payu_response(request: Request, db: Session = Depends(get_db)):
         except Exception:
             data = {}
 
+    if not settings.payu_configured:
+        logger.error("PayU callback received but PayU credentials are not configured.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="PayU payment gateway is not configured on this server.",
+        )
+
     txnid = str(data.get("txnid") or "").strip()
     status_raw = str(data.get("status") or "").strip().lower()
     logger.info("Received PayU callback: txnid=%s, status=%s", txnid, status_raw)
@@ -954,6 +996,24 @@ async def payu_response(request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Order not found for PayU transaction '{txnid}'.",
         )
+
+    # Amount verification against order total
+    raw_amount = str(data.get("amount") or "").strip()
+    if raw_amount:
+        try:
+            paid_amount = float(raw_amount)
+            expected_amount = float(order.total_amount)
+            if abs(paid_amount - expected_amount) > 0.01:
+                logger.error(
+                    "PayU callback amount mismatch for order %s: expected %.2f, received %.2f",
+                    order.order_number, expected_amount, paid_amount
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Payment amount mismatch: expected {expected_amount:.2f}, received {paid_amount:.2f}",
+                )
+        except ValueError:
+            pass
 
     # Idempotency check for duplicate callbacks
     current_status = normalize_status(order.status)

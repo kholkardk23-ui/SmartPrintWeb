@@ -590,3 +590,109 @@ def test_payu_confirmed_order_appears_on_tablet_dashboard(client, created_order,
     assert target["payment_status"] in ("PAID", "SUCCESS")
     assert target["is_paid"] is True
     assert target["payment_reference"] == mihpayid
+
+
+def test_missing_payu_credentials_handling(client, created_order, monkeypatch, db_session):
+    """
+    Requirements Check:
+    When PayU credentials are not configured:
+    - Non-payment health endpoint (/api/health) continues working.
+    - PDF upload and order creation continue working.
+    - Payment checkout returns HTTP 503 with clear configuration error.
+    - Payment QR returns HTTP 503 with clear configuration error.
+    - Does NOT crash the backend.
+    - Does NOT generate fake payment success.
+    - Does NOT mark order as PAID.
+    - Does NOT bypass payment verification.
+    """
+    # Unset PayU credentials
+    monkeypatch.setattr(settings, "PAYU_MERCHANT_KEY", "")
+    monkeypatch.setattr(settings, "PAYU_MERCHANT_SALT", "")
+
+    # 1. Health check continues working
+    health_res = client.get("/api/health")
+    assert health_res.status_code == 200
+    assert health_res.json()["status"] in ("ok", "healthy")
+
+    # 2. File upload continues working
+    pdf_bytes = create_mock_pdf_bytes(page_count=1)
+    upload_res = client.post(
+        "/api/files/upload",
+        files={"file": ("unconf_test.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+    )
+    assert upload_res.status_code == 201
+
+    # 3. Order creation continues working
+    order_id = created_order["order_id"]
+    get_order_res = client.get(f"/api/orders/{order_id}")
+    assert get_order_res.status_code == 200
+    assert get_order_res.json()["payment_status"] == "PENDING"
+    assert get_order_res.json()["is_paid"] is False
+
+    # 4. Checkout returns clear HTTP 503 configuration error
+    checkout_res = client.post(f"/api/payments/{order_id}/checkout?provider=payu")
+    assert checkout_res.status_code == 503
+    assert "PAYU_MERCHANT_KEY" in checkout_res.json()["detail"]
+    assert "PAYU_MERCHANT_SALT" in checkout_res.json()["detail"]
+
+    # 5. QR generation returns clear HTTP 503 configuration error
+    qr_res = client.post(f"/api/payments/{order_id}/qr")
+    assert qr_res.status_code == 503
+    assert "PayU payment gateway is not configured" in qr_res.json()["detail"]
+
+    # 6. Verification endpoint rejects because credentials are missing
+    verify_res = client.post(f"/api/payments/{order_id}/verify-payu", json={"txnid": "test"})
+    assert verify_res.status_code == 503
+
+    # 7. Callback endpoint rejects because credentials are missing
+    callback_res = client.post("/api/payments/payu/response", data={"txnid": "test"})
+    assert callback_res.status_code == 503
+
+    # 8. Order remains UNPAID
+    db_order = db_session.query(Order).filter(Order.id == created_order["id"]).first()
+    assert db_order.status != OrderStatus.CONFIRMED.value
+    assert db_order.payment_status != "PAID"
+    assert db_order.is_paid is False
+
+
+def test_payu_amount_mismatch_rejected(client, created_order, db_session):
+    """Security check: PayU callback with wrong payment amount must be rejected."""
+    order_id = created_order["order_id"]
+    checkout_res = client.post(f"/api/payments/{order_id}/checkout")
+    payu_params = checkout_res.json()["payu_params"]
+    txnid = payu_params["txnid"]
+    wrong_amount = "9999.00"
+
+    res_hash = generate_payu_response_hash(
+        status="success",
+        txnid=txnid,
+        amount=wrong_amount,
+        productinfo=payu_params["productinfo"],
+        firstname=payu_params["firstname"],
+        email=payu_params["email"],
+        udf1=payu_params["udf1"],
+        udf2=payu_params["udf2"],
+    )
+
+    callback_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": wrong_amount,
+        "productinfo": payu_params["productinfo"],
+        "firstname": payu_params["firstname"],
+        "email": payu_params["email"],
+        "udf1": payu_params["udf1"],
+        "udf2": payu_params["udf2"],
+        "mihpayid": "403993715526978130",
+        "key": "TH9CFX",
+        "hash": res_hash,
+    }
+
+    res = client.post("/api/payments/payu/response", data=callback_data)
+    assert res.status_code == 400
+    assert "amount mismatch" in res.json()["detail"].lower()
+
+    # Order must NOT be marked paid
+    db_order = db_session.query(Order).filter(Order.id == created_order["id"]).first()
+    assert db_order.is_paid is False
+    assert db_order.status != OrderStatus.CONFIRMED.value

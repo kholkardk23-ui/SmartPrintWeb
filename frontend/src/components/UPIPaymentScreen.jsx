@@ -49,6 +49,7 @@ export default function UPIPaymentScreen({
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [configNotice, setConfigNotice] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
   const [timeLeft, setTimeLeft] = useState(PAYMENT_TIMEOUT_SECONDS);
   const [isPaid, setIsPaid] = useState(false);
@@ -89,6 +90,11 @@ export default function UPIPaymentScreen({
       if (checkoutRes.status === 'fulfilled') {
         const cData = checkoutRes.value;
         setCheckoutData(cData);
+      } else if (checkoutRes.status === 'rejected') {
+        const detail = checkoutRes.reason?.response?.data?.detail || '';
+        if (detail.includes('PAYU_MERCHANT_KEY') || detail.includes('PayU payment gateway is not configured')) {
+          setConfigNotice('PayU merchant credentials are not yet configured on the server. Please complete payment using the tablet screen.');
+        }
       }
     } catch (err) {
       console.error('Failed to initialize PayU payment:', err);
@@ -433,6 +439,17 @@ export default function UPIPaymentScreen({
             </>
           )}
         </div>
+
+        {/* Configuration Notice */}
+        {configNotice && !isPaid && (
+          <div className="mb-4 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-medium flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-amber-950">PayU Gateway Setup Pending</p>
+              <p className="mt-0.5">{configNotice}</p>
+            </div>
+          </div>
+        )}
 
         {/* Error message */}
         {errorMessage && (

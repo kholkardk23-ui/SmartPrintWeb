@@ -435,9 +435,10 @@ def create_order(
             exc,
         )
 
+        err_type = type(exc).__name__
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create order",
+            detail=f"Failed to create order: {err_type}. Please try again.",
         ) from exc
 
 
@@ -456,22 +457,31 @@ def get_latest_order(
     """
     Return the latest order by customer-facing order number.
     """
-    query = db.query(Order).filter(Order.order_number.isnot(None))
-    if confirmed_only:
-        query = query.filter(
-            (Order.status.in_(["CONFIRMED", "PAID", "QUEUED", "PRINTING", "COMPLETED"]))
-            | (Order.payment_status.in_(["PAID", "SUCCESS"]))
-        )
+    try:
+        query = db.query(Order).filter(Order.order_number.isnot(None))
+        if confirmed_only:
+            query = query.filter(
+                (Order.status.in_(["CONFIRMED", "PAID", "QUEUED", "PRINTING", "COMPLETED"]))
+                | (Order.payment_status.in_(["PAID", "SUCCESS"]))
+            )
 
-    order = query.order_by(Order.order_number.desc()).first()
+        order = query.order_by(Order.order_number.desc()).first()
 
-    if not order:
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No orders found",
+            )
+
+        return build_order_response(order, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to fetch latest order: %s", exc)
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No orders found",
-        )
-
-    return build_order_response(order, db)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch latest order: {type(exc).__name__}",
+        ) from exc
 
 
 # ============================================================
@@ -488,18 +498,24 @@ def get_all_orders(
     """
     Return all orders in descending order-number order.
     """
+    try:
+        orders = (
+            db.query(Order)
+            .filter(Order.order_number.isnot(None))
+            .order_by(Order.order_number.desc())
+            .all()
+        )
 
-    orders = (
-        db.query(Order)
-        .filter(Order.order_number.isnot(None))
-        .order_by(Order.order_number.desc())
-        .all()
-    )
-
-    return [
-        build_order_response(order, db)
-        for order in orders
-    ]
+        return [
+            build_order_response(order, db)
+            for order in orders
+        ]
+    except Exception as exc:
+        logger.exception("Failed to fetch orders: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch orders: {type(exc).__name__}",
+        ) from exc
 
 
 # ============================================================
