@@ -139,12 +139,20 @@ export const getPayUQR = async (orderId) => {
   return response.data;
 };
 
-// Create automatic checkout session (PayU / YouPI / Razorpay / Cashfree / Demo)
-export const createCheckout = async (orderId, provider = null) => {
-  const url = provider
-    ? `/api/payments/${orderId}/checkout?provider=${provider}`
-    : `/api/payments/${orderId}/checkout`;
+// Create automatic checkout session (PayU Smart Intent / YouPI / Razorpay / Cashfree / Demo)
+export const createCheckout = async (orderId, provider = null, upiApp = null) => {
+  const params = new URLSearchParams();
+  if (provider) params.append("provider", provider);
+  if (upiApp) params.append("upi_app", upiApp);
+  const qs = params.toString();
+  const url = qs ? `/api/payments/${orderId}/checkout?${qs}` : `/api/payments/${orderId}/checkout`;
   const response = await api.post(url);
+  return response.data;
+};
+
+// Fetch app-specific PayU Smart Intent deep links
+export const getPayUAppIntent = async (orderId, app = "genericintent") => {
+  const response = await api.post(`/api/payments/${orderId}/payu-intent?app=${encodeURIComponent(app)}`);
   return response.data;
 };
 

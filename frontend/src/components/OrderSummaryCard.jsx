@@ -247,15 +247,18 @@ export default function OrderSummaryCard({
           <div className="mb-6 p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 shadow-xs">
             <div className="flex items-center gap-2 font-bold text-emerald-800 text-sm mb-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>UPI Payment Verified Successfully</span>
+              <span>Payment Successful • Verified via PayU</span>
             </div>
             <p className="text-emerald-700 leading-relaxed font-medium">
               Payment of <strong>{currencySymbol}{Number(order.total_amount || 0).toFixed(2)}</strong> has been verified.
               {order.payment_reference && (
                 <span className="block mt-1 font-mono text-[11px] text-emerald-800">
-                  Ref: {order.payment_reference}
+                  Transaction Ref: {order.payment_reference}
                 </span>
               )}
+              <span className="block mt-0.5 font-mono text-[11px] text-emerald-800">
+                Order Number: {order.order_id}
+              </span>
               Your document is queued for printing. Please collect your printout at the kiosk tray.
             </p>
           </div>
@@ -264,7 +267,7 @@ export default function OrderSummaryCard({
             <div>
               <p className="font-bold text-amber-900">Payment Pending</p>
               <p className="text-amber-700 text-[11px] mt-0.5">
-                Complete payment via dynamic UPI to send this order to the printer.
+                Complete payment via PayU or tablet dynamic QR to send this order to the printer.
               </p>
             </div>
             {onProceedToPayment && (
@@ -289,7 +292,7 @@ export default function OrderSummaryCard({
               className="flex-1 inline-flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-base text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] transition-all shadow-md shadow-emerald-600/25 cursor-pointer"
             >
               <CreditCard className="w-5 h-5" />
-              <span>Proceed to UPI Payment ({currencySymbol}{Number(order.total_amount || 0).toFixed(2)})</span>
+              <span>Proceed to Pay ({currencySymbol}{Number(order.total_amount || 0).toFixed(2)})</span>
             </button>
           ) : (
             <button

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Dynamic UPI Configuration
     PAYMENT_ENABLED: bool = True
-    UPI_ID: str = "9823555453@kotakbank"
+    UPI_ID: str = ""
     UPI_NAME: str = "SmartPrint Kiosk"
 
     # PayU Payment Gateway (Hosted Checkout)
@@ -97,11 +97,19 @@ class Settings(BaseSettings):
 
     @property
     def payu_configured(self) -> bool:
-        """True when both PayU Key and Salt are present."""
-        return bool(
-            (self.PAYU_MERCHANT_KEY or "").strip()
-            and (self.PAYU_MERCHANT_SALT or "").strip()
-        )
+        """True when both PayU Key and Salt are present and not placeholders."""
+        key = (self.PAYU_MERCHANT_KEY or "").strip()
+        salt = (self.PAYU_MERCHANT_SALT or "").strip()
+        if not key or not salt:
+            return False
+        if key in ("YOUR_PAYU_MERCHANT_KEY", "CHANGE_ME") or salt in ("YOUR_PAYU_MERCHANT_SALT", "CHANGE_ME"):
+            return False
+        return True
+
+    @property
+    def is_payu_live(self) -> bool:
+        """True when PayU is configured to run in production LIVE mode."""
+        return (self.PAYU_MODE or "").strip().upper() in ("LIVE", "PRODUCTION")
 
     @property
     def youpi_configured(self) -> bool:

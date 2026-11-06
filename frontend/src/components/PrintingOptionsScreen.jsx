@@ -13,6 +13,7 @@ import {
   RotateCcw,
   ArrowRight,
   QrCode,
+  CreditCard,
 } from 'lucide-react';
 
 import { createOrder } from '../services/api';
@@ -1150,8 +1151,8 @@ console.log("====================================");
               </>
             ) : (
               <>
-                <QrCode className="w-5 h-5" />
-                <span>Proceed to UPI Payment (₹{estimatedTotalPrice.toFixed(2)})</span>
+                <CreditCard className="w-5 h-5" />
+                <span>Proceed to Payment (₹{estimatedTotalPrice.toFixed(2)})</span>
                 <ArrowRight className="w-4 h-4 ml-0.5" />
               </>
             )}

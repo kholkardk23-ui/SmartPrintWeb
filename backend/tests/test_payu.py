@@ -22,7 +22,7 @@ import pymupdf
 import pytest
 
 from app.config import settings
-from app.models import Order, OrderStatus
+from app.models import Order, OrderStatus, PaymentTransaction
 from app.services import payu_service
 
 
@@ -696,3 +696,499 @@ def test_payu_amount_mismatch_rejected(client, created_order, db_session):
     db_order = db_session.query(Order).filter(Order.id == created_order["id"]).first()
     assert db_order.is_paid is False
     assert db_order.status != OrderStatus.CONFIRMED.value
+
+
+def test_payment_transaction_table_recording(client, created_order, db_session):
+    """Test that PaymentTransaction records are created and updated throughout lifecycle."""
+    order_id = created_order["order_id"]
+    checkout_res = client.post(f"/api/payments/{order_id}/checkout")
+    assert checkout_res.status_code == 200
+    txnid = checkout_res.json()["payment_session_id"]
+
+    # Verify transaction record exists with status INITIATED
+    txn = db_session.query(PaymentTransaction).filter(PaymentTransaction.txnid == txnid).first()
+    assert txn is not None
+    assert txn.order_id == created_order["id"]
+    assert float(txn.amount) == pytest.approx(float(created_order["total_amount"]))
+    assert txn.payment_gateway == "PAYU"
+    assert txn.payment_status == "INITIATED"
+
+    # Simulate PayU callback
+    payu_params = checkout_res.json()["payu_params"]
+    amount = payu_params["amount"]
+    mihpayid = "998877665544332211"
+    res_hash = generate_payu_response_hash(
+        status="success",
+        txnid=txnid,
+        amount=amount,
+        productinfo=payu_params["productinfo"],
+        firstname=payu_params["firstname"],
+        email=payu_params["email"],
+        udf1=payu_params["udf1"],
+        udf2=payu_params["udf2"],
+    )
+    callback_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": payu_params["productinfo"],
+        "firstname": payu_params["firstname"],
+        "email": payu_params["email"],
+        "udf1": payu_params["udf1"],
+        "udf2": payu_params["udf2"],
+        "mihpayid": mihpayid,
+        "mode": "UPI",
+        "key": "TH9CFX",
+        "hash": res_hash,
+    }
+    mock_verification = {
+        "status": 1,
+        "msg": "1 Transactions found",
+        "transaction_details": {
+            txnid: {
+                "mihpayid": mihpayid,
+                "status": "success",
+                "amt": amount,
+                "txnid": txnid,
+                "mode": "UPI",
+            }
+        },
+    }
+    with mock_payu_service_post(mock_verification):
+        res = client.post("/api/payments/payu/response", data=callback_data, headers={"Accept": "application/json"})
+        assert res.status_code == 200
+
+    # Verify transaction record updated to SUCCESS
+    db_session.refresh(txn)
+    assert txn.payment_status == "SUCCESS"
+    assert txn.mihpayid == mihpayid
+
+
+def test_payu_checkout_redirect_endpoint(client, created_order, db_session):
+    """Test the GET /{order_id}/payu-checkout endpoint for tablet/mobile redirect."""
+    order_id = created_order["order_id"]
+    res = client.get(f"/api/payments/{order_id}/payu-checkout")
+    assert res.status_code == 200
+    assert "text/html" in res.headers["content-type"]
+    assert "Redirecting to PayU" in res.text
+    assert "payuForm" in res.text
+    assert created_order["order_number"] in res.text
+
+
+def test_payu_production_mode_urls(monkeypatch):
+    """Verify that LIVE mode strictly selects PayU production endpoints."""
+    monkeypatch.setattr(settings, "PAYU_MODE", "LIVE")
+    assert payu_service.get_payu_payment_url() == "https://secure.payu.in/_payment"
+    assert payu_service.get_payu_verify_url() == "https://info.payu.in/merchant/postservice.php?form=2"
+
+
+def test_payu_smart_intent_checkout(client, created_order):
+    """Test creating a PayU Smart Intent checkout session with all 5 UPI app options."""
+    order_id = created_order["order_id"]
+    res = client.post(f"/api/payments/{order_id}/checkout?provider=payu")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["provider"] == "payu"
+    assert data["payment_session_id"] is not None
+    assert data["payment_session_id"].startswith("TXN-PAYU-")
+    assert data["qr_type"] == "payu_smart_intent"
+
+    # Verify Smart Intent apps structure
+    upi_apps = data.get("upi_apps")
+    assert upi_apps is not None
+    assert "phonepe" in upi_apps
+    assert "googlepay" in upi_apps
+    assert "paytm" in upi_apps
+    assert "bhim" in upi_apps
+    assert "genericintent" in upi_apps
+
+    # Verify PhonePe intent details
+    phonepe = upi_apps["phonepe"]
+    assert phonepe["name"] == "PhonePe"
+    assert phonepe["package_name"] == "com.phonepe.app"
+    assert "com.phonepe.app" in phonepe["android_intent"]
+    assert "phonepe://" in phonepe["ios_scheme"]
+
+    # Verify Google Pay intent details
+    gpay = upi_apps["googlepay"]
+    assert gpay["name"] == "Google Pay"
+    assert gpay["package_name"] == "com.google.android.apps.nbu.paisa.user"
+    assert "com.google.android.apps.nbu.paisa.user" in gpay["android_intent"]
+    assert "gpay://" in gpay["ios_scheme"]
+
+    # Verify Paytm intent details
+    paytm = upi_apps["paytm"]
+    assert paytm["name"] == "Paytm"
+    assert paytm["package_name"] == "net.one97.paytm"
+    assert "net.one97.paytm" in paytm["android_intent"]
+    assert "paytm://" in paytm["ios_scheme"]
+
+    # Verify BHIM intent details
+    bhim = upi_apps["bhim"]
+    assert bhim["name"] == "BHIM"
+    assert bhim["package_name"] == "in.org.npci.upiapp"
+    assert "in.org.npci.upiapp" in bhim["android_intent"]
+
+    # Verify Generic intent chooser
+    generic = upi_apps["genericintent"]
+    assert generic["name"] == "Other UPI Apps"
+    assert "scheme=upi" in generic["android_intent"]
+
+    # Security check: Never expose merchant salt in frontend response
+    assert "salt" not in data
+    assert "PAYU_MERCHANT_SALT" not in data
+    assert settings.PAYU_MERCHANT_SALT not in json.dumps(data)
+
+
+def test_payu_specific_app_intent_endpoint(client, created_order):
+    """Test POST /{order_id}/payu-intent endpoint for specific apps."""
+    order_id = created_order["order_id"]
+
+    for app in ("phonepe", "googlepay", "paytm", "bhim", "genericintent"):
+        res = client.post(f"/api/payments/{order_id}/payu-intent?app={app}")
+        assert res.status_code == 200
+        intent = res.json()
+        assert intent["success"] is True
+        assert intent["selected_app"] == app
+        assert intent["intent_uri_data"] is not None
+        assert intent["universal_upi_uri"].startswith("upi://pay?")
+        assert app in intent["apps"]
+
+
+def test_payu_tablet_qr_endpoint(client, created_order):
+    """Test /{order_id}/qr endpoint with PayU Smart Intent."""
+    order_id = created_order["order_id"]
+    res = client.post(f"/api/payments/{order_id}/qr")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["provider"] == "payu"
+    assert data["payment_session_id"] is not None
+    assert data["qr_data"] is not None
+    assert "PayU" in data["message"]
+
+
+def test_unique_txnid_generated_on_retry(client, created_order, db_session):
+    """Confirm unique transaction ID is generated for each payment attempt while preserving the order."""
+    order_id = created_order["order_id"]
+
+    # First attempt
+    res1 = client.post(f"/api/payments/{order_id}/checkout")
+    assert res1.status_code == 200
+    txnid1 = res1.json()["payment_session_id"]
+
+    # Second attempt (e.g. customer retries payment)
+    res2 = client.post(f"/api/payments/{order_id}/checkout")
+    assert res2.status_code == 200
+    txnid2 = res2.json()["payment_session_id"]
+
+    assert txnid1 != txnid2
+    assert txnid1.startswith("TXN-PAYU-")
+    assert txnid2.startswith("TXN-PAYU-")
+
+    # Order must remain single and preserved
+    order = db_session.query(Order).filter((Order.id == created_order["id"]) | (Order.order_number == order_id)).first()
+    assert order is not None
+
+    # Both transaction attempts recorded in payment_transactions table
+    txns = db_session.query(PaymentTransaction).filter(PaymentTransaction.order_id == order.id).all()
+    assert len(txns) >= 2
+
+
+def test_pending_and_failed_payment_does_not_mark_order_paid(client, created_order, db_session):
+    """Confirm pending and failed payments do not mark order as paid."""
+    order_id = created_order["order_id"]
+    checkout_res = client.post(f"/api/payments/{order_id}/checkout")
+    assert checkout_res.status_code == 200
+    txnid = checkout_res.json()["payment_session_id"]
+    amount = checkout_res.json()["payu_params"]["amount"]
+
+    # Test pending payment: order remains unpaid
+    status_res = client.get(f"/api/payments/{order_id}/status")
+    assert status_res.status_code == 200
+    assert status_res.json()["is_paid"] is False
+    assert status_res.json()["status"] == "PAYMENT_PENDING"
+
+    # Test failed callback
+    res_hash = generate_payu_response_hash(
+        status="failure",
+        txnid=txnid,
+        amount=amount,
+        productinfo=checkout_res.json()["payu_params"]["productinfo"],
+        firstname=checkout_res.json()["payu_params"]["firstname"],
+        email=checkout_res.json()["payu_params"]["email"],
+        udf1=checkout_res.json()["payu_params"]["udf1"],
+        udf2=checkout_res.json()["payu_params"]["udf2"],
+    )
+    fail_data = {
+        "status": "failure",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": checkout_res.json()["payu_params"]["productinfo"],
+        "firstname": checkout_res.json()["payu_params"]["firstname"],
+        "email": checkout_res.json()["payu_params"]["email"],
+        "udf1": checkout_res.json()["payu_params"]["udf1"],
+        "udf2": checkout_res.json()["payu_params"]["udf2"],
+        "key": "TH9CFX",
+        "hash": res_hash,
+        "error_Message": "Bank declined transaction",
+    }
+    fail_res = client.post("/api/payments/payu/response", data=fail_data, headers={"Accept": "application/json"})
+    assert fail_res.status_code == 200
+    assert fail_res.json()["status"] == "failed"
+
+    # Order must NOT be marked paid
+    db_order = db_session.query(Order).filter((Order.id == created_order["id"]) | (Order.order_number == order_id)).first()
+    assert db_order.status in ("FAILED", "PAYMENT_PENDING")
+    assert getattr(db_order, "is_paid", False) is False
+
+
+def test_payu_merchant_key_mismatch_rejected(client, created_order):
+    """Security check: PayU callback with mismatched merchant key must be rejected."""
+    order_id = created_order["order_id"]
+    checkout_res = client.post(f"/api/payments/{order_id}/checkout")
+    payu_params = checkout_res.json()["payu_params"]
+    txnid = payu_params["txnid"]
+    amount = payu_params["amount"]
+
+    res_hash = generate_payu_response_hash(
+        status="success",
+        txnid=txnid,
+        amount=amount,
+        productinfo=payu_params["productinfo"],
+        firstname=payu_params["firstname"],
+        email=payu_params["email"],
+        udf1=payu_params["udf1"],
+        udf2=payu_params["udf2"],
+        key="WRONG_MERCHANT_KEY",
+    )
+    callback_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": payu_params["productinfo"],
+        "firstname": payu_params["firstname"],
+        "email": payu_params["email"],
+        "udf1": payu_params["udf1"],
+        "udf2": payu_params["udf2"],
+        "key": "WRONG_MERCHANT_KEY",
+        "hash": res_hash,
+    }
+    res = client.post("/api/payments/payu/response", data=callback_data)
+    assert res.status_code == 400
+    assert "merchant key" in res.json()["detail"].lower()
+
+
+# ============================================================
+# FLOW 2 – TABLET SCANNER PAYMENT TESTS
+# ============================================================
+
+def test_flow_2_tablet_qr_payment_success(client, created_order, db_session):
+    """
+    Test Flow 2: Tablet Scanner Payment End-to-End.
+    1. Order created in CREATED state.
+    2. Tablet fetches QR code via /{order_id}/qr.
+    3. Checks valid UPI URI and PayU transaction tracking.
+    4. Customer scans QR with PhonePe / GPay and pays.
+    5. PayU callback received with hash and verified via PayU Verify Payment API.
+    6. PaymentTransaction marked SUCCESS, Order marked CONFIRMED / PAID.
+    7. Order immediately accessible on tablet dashboard.
+    """
+    order_id = created_order["order_id"]
+    db_order = db_session.query(Order).filter((Order.id == created_order["id"]) | (Order.order_number == order_id)).first()
+    assert db_order is not None
+
+    # Step 2: Tablet calls /{order_id}/qr to display payment QR
+    qr_res = client.post(f"/api/payments/{order_id}/qr")
+    assert qr_res.status_code == 200
+    qr_data = qr_res.json()
+
+    assert qr_data["provider"] == "payu"
+    assert qr_data["payment_session_id"] is not None
+    assert qr_data["payment_session_id"].startswith("TXN-PAYU-")
+    assert qr_data["upi_uri"] is not None
+    assert qr_data["upi_uri"].startswith("upi://pay?")
+    assert qr_data["qr_data"].startswith("upi://pay?")
+    assert qr_data["qr_type"] in ("payu_smart_intent", "payu_dynamic_upi_qr")
+
+    txnid = qr_data["payment_session_id"]
+    amount = f"{float(created_order['total_amount']):.2f}"
+
+    # Step 3: Transaction attempt recorded in payment_transactions
+    txn = db_session.query(PaymentTransaction).filter(PaymentTransaction.txnid == txnid).first()
+    assert txn is not None
+    assert txn.order_id == db_order.id
+    assert txn.payment_status == "INITIATED"
+
+    # Step 4 & 5: PayU callback for tablet QR payment
+    productinfo = f"SmartPrint Order {db_order.order_number or db_order.id}"
+    res_hash = generate_payu_response_hash(
+        status="success",
+        txnid=txnid,
+        amount=amount,
+        productinfo=productinfo,
+        firstname="Customer",
+        email="customer@smartprint.local",
+        udf1=str(db_order.id),
+        udf2=str(db_order.order_number),
+    )
+    callback_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": productinfo,
+        "firstname": "Customer",
+        "email": "customer@smartprint.local",
+        "udf1": str(db_order.id),
+        "udf2": str(db_order.order_number),
+        "key": "TH9CFX",
+        "hash": res_hash,
+        "mihpayid": "PAYU_TAB_MIH_9999",
+        "bank_ref_num": "BANK_TAB_REF_8888",
+        "mode": "UPI",
+    }
+
+    mock_verify = {
+        "verified": True,
+        "status": "success",
+        "transaction": {"status": "success", "amt": amount, "mihpayid": "PAYU_TAB_MIH_9999"},
+        "mihpayid": "PAYU_TAB_MIH_9999",
+        "amount": amount,
+        "mode": "UPI",
+    }
+
+    with patch.object(payu_service, "verify_payment_with_payu", return_value=mock_verify):
+        cb_res = client.post(
+            "/api/payments/payu/response",
+            data=callback_data,
+            headers={"Accept": "application/json"},
+        )
+        assert cb_res.status_code == 200
+        res_json = cb_res.json()
+        assert res_json["status"] == "success"
+        assert res_json["payment_status"] == "PAID"
+        assert res_json["order_status"] in ("CONFIRMED", "PAID")
+
+    # Step 6: Database verification
+    db_session.expire_all()
+    updated_order = db_session.query(Order).filter(Order.id == db_order.id).first()
+    assert updated_order.status in ("CONFIRMED", "PAID")
+    assert updated_order.payment_status in ("PAID", "SUCCESS")
+    assert updated_order.is_paid is True
+    assert updated_order.payment_reference == "PAYU_TAB_MIH_9999"
+
+    updated_txn = db_session.query(PaymentTransaction).filter(PaymentTransaction.txnid == txnid).first()
+    assert updated_txn.payment_status == "SUCCESS"
+    assert updated_txn.mihpayid == "PAYU_TAB_MIH_9999"
+
+    # Step 7: Tablet polling reflects confirmed order
+    status_res = client.get(f"/api/payments/{order_id}/status")
+    assert status_res.status_code == 200
+    assert status_res.json()["is_paid"] is True
+    assert status_res.json()["payment_status"] == "PAID"
+
+    # Step 8: Order visible in latest confirmed orders for tablet
+    latest_res = client.get("/api/orders/latest?confirmed_only=true")
+    assert latest_res.status_code == 200
+    assert latest_res.json()["order_number"] == db_order.order_number
+    assert latest_res.json()["is_paid"] is True
+
+
+def test_flow_2_tablet_qr_order_matching_by_txnid_alone(client, created_order, db_session):
+    """
+    Test Flow 2 robustness: Match order even when PayU callback lacks udf1 / udf2.
+    The order is matched through PaymentTransaction table.
+    """
+    order_id = created_order["order_id"]
+    db_order = db_session.query(Order).filter((Order.id == created_order["id"]) | (Order.order_number == order_id)).first()
+
+    # Generate QR to initiate transaction
+    qr_res = client.post(f"/api/payments/{order_id}/qr")
+    txnid = qr_res.json()["payment_session_id"]
+    amount = f"{float(created_order['total_amount']):.2f}"
+    productinfo = f"SmartPrint Order {db_order.order_number or db_order.id}"
+
+    # Callback with empty udf1 and udf2
+    res_hash = generate_payu_response_hash(
+        status="success",
+        txnid=txnid,
+        amount=amount,
+        productinfo=productinfo,
+        firstname="Customer",
+        email="customer@smartprint.local",
+        udf1="",
+        udf2="",
+    )
+    callback_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": productinfo,
+        "firstname": "Customer",
+        "email": "customer@smartprint.local",
+        "udf1": "",
+        "udf2": "",
+        "key": "TH9CFX",
+        "hash": res_hash,
+        "mihpayid": "PAYU_NO_UDF_9999",
+    }
+
+    mock_verify = {
+        "verified": True,
+        "status": "success",
+        "transaction": {"status": "success", "amt": amount},
+        "mihpayid": "PAYU_NO_UDF_9999",
+        "amount": amount,
+        "mode": "UPI",
+    }
+
+    with patch.object(payu_service, "verify_payment_with_payu", return_value=mock_verify):
+        cb_res = client.post(
+            "/api/payments/payu/response",
+            data=callback_data,
+            headers={"Accept": "application/json"},
+        )
+        assert cb_res.status_code == 200
+        assert cb_res.json()["status"] == "success"
+
+    db_session.expire_all()
+    updated_order = db_session.query(Order).filter(Order.id == db_order.id).first()
+    assert updated_order.status in ("CONFIRMED", "PAID")
+    assert updated_order.is_paid is True
+
+
+def test_flow_2_tablet_qr_polling_verifies_payu_payment(client, created_order, db_session):
+    """
+    Test that tablet polling at /api/payments/{order_id}/status automatically
+    verifies PayU payment if customer completes payment on phone.
+    """
+    order_id = created_order["order_id"]
+    db_order = db_session.query(Order).filter((Order.id == created_order["id"]) | (Order.order_number == order_id)).first()
+
+    qr_res = client.post(f"/api/payments/{order_id}/qr")
+    txnid = qr_res.json()["payment_session_id"]
+    amount = f"{float(created_order['total_amount']):.2f}"
+
+    mock_verify = {
+        "verified": True,
+        "status": "success",
+        "transaction": {"status": "success", "amt": amount},
+        "mihpayid": "PAYU_POLL_VERIFIED_7777",
+        "amount": amount,
+        "mode": "UPI",
+    }
+
+    with patch.object(payu_service, "verify_payment_with_payu", return_value=mock_verify):
+        status_res = client.get(f"/api/payments/{order_id}/status")
+        assert status_res.status_code == 200
+        data = status_res.json()
+        assert data["is_paid"] is True
+        assert data["payment_status"] == "PAID"
+        assert data["payment_reference"] == "PAYU_POLL_VERIFIED_7777"
+
+    db_session.expire_all()
+    updated_order = db_session.query(Order).filter(Order.id == db_order.id).first()
+    assert updated_order.is_paid is True
+    assert updated_order.status in ("CONFIRMED", "PAID")
+
+

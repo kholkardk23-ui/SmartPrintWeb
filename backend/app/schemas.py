@@ -282,8 +282,19 @@ class PaymentCheckoutResponse(BaseModel):
     checkout_url: Optional[str] = None
     payu_params: Optional[Dict[str, Any]] = None
 
-    upi_id: str
-    upi_name: str
+    qr_type: Optional[str] = "payu_smart_intent"
+    dbqr_active: Optional[bool] = None
+    instructions: Optional[str] = None
+    activation_required: Optional[bool] = False
+    activation_details: Optional[str] = None
+
+    upi_intent: Optional[Dict[str, Any]] = None
+    upi_apps: Optional[Dict[str, Any]] = None
+    intent_uri_data: Optional[str] = None
+    selected_app: Optional[str] = None
+
+    upi_id: Optional[str] = ""
+    upi_name: Optional[str] = "SmartPrint"
     upi_uri: Optional[str] = None
     qr_data: Optional[str] = None
 
@@ -308,10 +319,31 @@ class PaymentStatusResponse(BaseModel):
     payment_reference: Optional[str] = None
     payment_timestamp: Optional[datetime] = None
     payment_session_id: Optional[str] = None
-    upi_id: str
-    upi_name: str
+    upi_id: Optional[str] = ""
+    upi_name: Optional[str] = "SmartPrint"
     upi_uri: Optional[str] = None
     is_paid: bool
+
+
+# ============================================================
+# PAYMENT TRANSACTION RESPONSE
+# ============================================================
+
+class PaymentTransactionResponse(BaseModel):
+    """Payment transaction details model."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    order_id: str
+    txnid: str
+    mihpayid: Optional[str] = None
+    amount: float
+    payment_gateway: str
+    payment_mode: Optional[str] = None
+    payment_status: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ============================================================

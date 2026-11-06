@@ -181,9 +181,8 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
 
         <div className="tablet-connection">
           <span
-            className={`tablet-connection-dot ${
-              connectionError ? "offline" : "online"
-            }`}
+            className={`tablet-connection-dot ${connectionError ? "offline" : "online"
+              }`}
           />
           {connectionError ? "Connection issue" : "System ready"}
         </div>
@@ -513,6 +512,16 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
         ) {
           clearInterval(pollingRef.current);
           onPaymentSuccess({ ...order, ...statusRes, status: "CONFIRMED", payment_status: "PAID" });
+        } else if (
+          statusRes &&
+          (statusRes.status === "FAILED" || statusRes.payment_status === "FAILED")
+        ) {
+          setErrorMessage("Payment failed or was declined at gateway. Please try again on your phone.");
+        } else if (
+          statusRes &&
+          (statusRes.status === "CANCELLED" || statusRes.payment_status === "CANCELLED")
+        ) {
+          setErrorMessage("Payment was cancelled. You may retry or return to the welcome screen.");
         }
       } catch (e) {
         // silent polling error
@@ -524,9 +533,10 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
     };
   }, [orderIdentifier, order, onPaymentSuccess]);
 
-  // Simulate payment for quick testing on kiosk
+  // Demo simulation only available in demo mode
+  const isDemoMode = paymentData?.mode === "demo";
   const handleSimulatePayment = async () => {
-    if (verifying || !orderIdentifier) return;
+    if (!isDemoMode || verifying || !orderIdentifier) return;
     setVerifying(true);
     setErrorMessage(null);
     try {
@@ -544,14 +554,16 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
     }
   };
 
-  const dynamicUpiUri =
-    paymentData?.upi_uri ||
+  // Distinguish between actual UPI Intent URI (upi://...) and Hosted Checkout URL (https://...)
+  const isDirectUpiIntent =
+    Boolean(paymentData?.upi_uri && String(paymentData.upi_uri).startsWith("upi://")) ||
+    String(paymentData?.qr_data || "").startsWith("upi://");
+
+  const qrValue =
     paymentData?.qr_data ||
-    `upi://pay?pa=9823555453@kotakbank&pn=SmartPrint%20Kiosk&am=${Number(
-      order?.total_amount || 0
-    ).toFixed(2)}&cu=INR&tn=${encodeURIComponent(
-      `SmartPrint ${getOrderNumber(order)}`
-    )}&tr=${getOrderNumber(order)}`;
+    paymentData?.upi_uri ||
+    paymentData?.checkout_url ||
+    "";
 
   return (
     <main className="tablet-dashboard tablet-upi-screen">
@@ -565,7 +577,7 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
         </div>
 
         <div className="tablet-order-badge tablet-payment-badge">
-          SMARTPRINT PAYMENT
+          PAYU SECURE PAYMENT
         </div>
       </header>
 
@@ -577,25 +589,25 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
             Amount: {formatAmount(order?.total_amount)}
           </h2>
           <span className="tablet-upi-amount-label">
-            PayU India • Secure UPI Payment
+            PayU India • {isDirectUpiIntent ? "Dynamic UPI QR (Direct App Intent)" : "Hosted Checkout Portal"}
           </span>
         </div>
 
         {/* Scanner Card */}
         <div className="tablet-upi-qr-card">
           <div className="tablet-upi-qr-frame">
-            {loading ? (
+            {loading || !qrValue ? (
               <div style={{ padding: "40px", color: "var(--sp-muted)", fontSize: "14px" }}>
-                Generating Scanner...
+                Generating PayU QR...
               </div>
             ) : (
               <QRCodeSVG
-                value={dynamicUpiUri}
+                value={qrValue}
                 size={210}
                 level="H"
                 includeMargin
                 imageSettings={{
-                  src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%232563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>',
+                  src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>',
                   height: 28,
                   width: 28,
                   excavate: true,
@@ -605,40 +617,53 @@ function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
           </div>
 
           <span className="tablet-upi-qr-prompt">
-            Scan using your UPI App
+            {isDirectUpiIntent
+              ? "Scan the QR code using your UPI application"
+              : "Scan with your phone camera to open PayU Hosted Checkout"}
           </span>
 
           <div className="tablet-upi-apps">
-            {["GPay", "PhonePe", "Paytm", "BHIM"].map((app) => (
+            {(isDirectUpiIntent
+              ? ["Google Pay", "PhonePe", "Paytm", "BHIM UPI"]
+              : ["UPI", "Debit Card", "Credit Card", "Net Banking"]
+            ).map((app) => (
               <span key={app} className="tablet-upi-app-pill">
                 {app}
               </span>
             ))}
           </div>
+
+          {paymentData?.activation_required && (
+            <div style={{ marginTop: "12px", padding: "8px 12px", background: "#fef3c7", borderRadius: "10px", color: "#92400e", fontSize: "11px", textAlign: "left", maxWidth: "260px" }}>
+              <strong>Notice:</strong> PayU UPI Smart Intent S2S activation is pending on this merchant account. Showing PayU Hosted Checkout fallback QR.
+            </div>
+          )}
         </div>
 
         {/* Live Status Hint */}
         <div className="tablet-upi-status-hint">
           <span className="tablet-upi-pulse-dot" />
-          <span>Waiting for payment...</span>
+          <span>Waiting for payment confirmation...</span>
         </div>
 
         {errorMessage && (
-          <div style={{ color: "#b91c1c", fontSize: "12px", fontWeight: "600" }}>
+          <div style={{ color: "#b91c1c", fontSize: "12px", fontWeight: "600", padding: "6px 12px", background: "#fee2e2", borderRadius: "8px" }}>
             {errorMessage}
           </div>
         )}
 
-        {/* Quick Actions (Simulate & Cancel) */}
+        {/* Actions */}
         <div className="tablet-upi-actions">
-          <button
-            type="button"
-            className="tablet-upi-simulate-btn"
-            onClick={handleSimulatePayment}
-            disabled={verifying}
-          >
-            {verifying ? "Verifying..." : "⚡ Quick Test: Simulate Payment"}
-          </button>
+          {isDemoMode && (
+            <button
+              type="button"
+              className="tablet-upi-simulate-btn"
+              onClick={handleSimulatePayment}
+              disabled={verifying}
+            >
+              {verifying ? "Verifying..." : "⚡ Demo Test: Simulate Payment"}
+            </button>
+          )}
 
           <button
             type="button"
@@ -733,17 +758,21 @@ export default function TabletDashboard() {
       setConnectionError(false);
       setLastUpdated(new Date().toISOString());
 
-      // Filter confirmed/paid orders and pending payment orders for tablet kiosk
-      const confirmedOrders = sortedOrders.filter(isOrderPaid);
-      const pendingOrders = sortedOrders.filter(
-        (o) =>
-          !isOrderPaid(o) &&
-          ["PAYMENT_PENDING", "OPTIONS_SELECTED", "CREATED"].includes(
-            String(o?.status || "").toUpperCase()
-          )
-      );
+      // Helper to identify active pending orders awaiting payment
+      const isPendingOrder = (o) => {
+        if (!o || isOrderPaid(o)) return false;
+        const status = String(o?.status ?? "").toUpperCase();
+        const paymentStatus = String(o?.payment_status ?? "").toUpperCase();
+        if (["FAILED", "CANCELLED"].includes(status) || ["FAILED", "CANCELLED"].includes(paymentStatus)) {
+          return false;
+        }
+        return ["CREATED", "OPTIONS_SELECTED", "PAYMENT_PENDING"].includes(status);
+      };
 
-      // On first load, display latest pending order or confirmed order if not dismissed
+      const confirmedOrders = sortedOrders.filter(isOrderPaid);
+      const pendingOrders = sortedOrders.filter(isPendingOrder);
+
+      // On first load, display latest active pending or confirmed paid order
       if (!initialized.current) {
         sortedOrders.forEach((order) => {
           seenOrderKeys.current.add(getOrderKey(order));
@@ -751,60 +780,134 @@ export default function TabletDashboard() {
 
         initialized.current = true;
 
-        const targetOrder = pendingOrders[0] || confirmedOrders[0];
-        if (targetOrder) {
-          const targetId = getOrderId(targetOrder);
-          const targetKey = getOrderKey(targetOrder);
+        // Check if there is an active pending order created recently (< 15 min)
+        const targetPending = pendingOrders.find((o) => {
+          const createdAt = Date.parse(o?.created_at ?? "") || 0;
+          return (
+            createdAt &&
+            Date.now() - createdAt <= 15 * 60 * 1000 &&
+            !dismissedOrderIds.current.has(getOrderId(o)) &&
+            !dismissedOrderKeys.current.has(getOrderKey(o))
+          );
+        });
+
+        if (targetPending) {
+          activeOrderKey.current = getOrderKey(targetPending);
+          setActiveOrder(targetPending);
+          return;
+        }
+
+        const targetConfirmed = confirmedOrders[0];
+        if (targetConfirmed) {
+          const targetId = getOrderId(targetConfirmed);
+          const targetKey = getOrderKey(targetConfirmed);
           if (
             !dismissedOrderIds.current.has(targetId) &&
             !dismissedOrderKeys.current.has(targetKey)
           ) {
             activeOrderKey.current = targetKey;
-            setActiveOrder(targetOrder);
+            setActiveOrder(targetConfirmed);
           }
         }
         return;
       }
 
-      // If already viewing an order, update its details live
+      // If already viewing an order, update live
       if (activeOrderRef.current) {
         const activeId = getOrderId(activeOrderRef.current);
-        const updated = sortedOrders.find((o) => getOrderId(o) === activeId);
-        if (updated) {
-          setActiveOrder(updated);
+        const currentIsPaid = isOrderPaid(activeOrderRef.current);
+
+        // Find current order in freshly polled orders
+        const matchingCurrent = sortedOrders.find((o) => getOrderId(o) === activeId);
+
+        if (matchingCurrent) {
+          // If viewing a pending order and it just became paid, transition to OrderDetails!
+          if (!currentIsPaid && isOrderPaid(matchingCurrent)) {
+            activeOrderKey.current = getOrderKey(matchingCurrent);
+            setActiveOrder(matchingCurrent);
+            return;
+          }
+
+          // If pending order was failed or cancelled, dismiss it
+          const status = String(matchingCurrent?.status ?? "").toUpperCase();
+          const paymentStatus = String(matchingCurrent?.payment_status ?? "").toUpperCase();
+          if (["FAILED", "CANCELLED"].includes(status) || ["FAILED", "CANCELLED"].includes(paymentStatus)) {
+            activeOrderKey.current = null;
+            setActiveOrder(null);
+            return;
+          }
+
+          // Update active order live
+          setActiveOrder(matchingCurrent);
         }
 
-        // If the current order is paid, check if a newer pending order arrived for payment
-        if (isOrderPaid(activeOrderRef.current)) {
+        // Check if a newer confirmed paid order arrived
+        const newestConfirmed = confirmedOrders[0];
+        if (
+          newestConfirmed &&
+          getOrderId(newestConfirmed) !== activeId &&
+          !dismissedOrderIds.current.has(getOrderId(newestConfirmed))
+        ) {
+          const createdAtNew = Date.parse(newestConfirmed?.created_at ?? "") || 0;
+          const createdAtActive = Date.parse(activeOrderRef.current?.created_at ?? "") || 0;
+          if (createdAtNew >= createdAtActive) {
+            activeOrderKey.current = getOrderKey(newestConfirmed);
+            setActiveOrder(newestConfirmed);
+            return;
+          }
+        }
+
+        // If viewing a confirmed order, check if a new customer created a new pending order
+        if (currentIsPaid) {
           const newestPending = pendingOrders[0];
           if (
             newestPending &&
             getOrderId(newestPending) !== activeId &&
             !dismissedOrderIds.current.has(getOrderId(newestPending))
           ) {
-            activeOrderKey.current = getOrderKey(newestPending);
-            setActiveOrder(newestPending);
+            const createdAtPending = Date.parse(newestPending?.created_at ?? "") || 0;
+            const createdAtActive = Date.parse(activeOrderRef.current?.created_at ?? "") || 0;
+            if (createdAtPending > createdAtActive) {
+              activeOrderKey.current = getOrderKey(newestPending);
+              setActiveOrder(newestPending);
+              return;
+            }
           }
         }
       } else {
-        // On Welcome Screen: Prioritize any pending order waiting for payment
-        const newestPending = pendingOrders[0];
-        if (
-          newestPending &&
-          !dismissedOrderIds.current.has(getOrderId(newestPending))
-        ) {
-          activeOrderKey.current = getOrderKey(newestPending);
-          setActiveOrder(newestPending);
-        } else {
-          // Otherwise display latest confirmed order if not dismissed
-          const newestConfirmed = confirmedOrders[0];
-          if (
-            newestConfirmed &&
-            !dismissedOrderIds.current.has(getOrderId(newestConfirmed))
-          ) {
+        // On Welcome Screen:
+        // Priority 1: Check if a new customer created a pending order requiring payment QR
+        const newestPending = pendingOrders.find((o) => {
+          const createdAt = Date.parse(o?.created_at ?? "") || 0;
+          return (
+            createdAt &&
+            Date.now() - createdAt <= 15 * 60 * 1000 &&
+            !dismissedOrderIds.current.has(getOrderId(o))
+          );
+        });
+
+        // Priority 2: Check for newest confirmed paid order
+        const newestConfirmed = confirmedOrders[0];
+
+        if (newestPending && newestConfirmed) {
+          const datePending = Date.parse(newestPending?.created_at ?? "") || 0;
+          const dateConfirmed = Date.parse(newestConfirmed?.created_at ?? "") || 0;
+          if (datePending >= dateConfirmed) {
+            activeOrderKey.current = getOrderKey(newestPending);
+            setActiveOrder(newestPending);
+          } else if (!dismissedOrderIds.current.has(getOrderId(newestConfirmed))) {
             activeOrderKey.current = getOrderKey(newestConfirmed);
             setActiveOrder(newestConfirmed);
           }
+        } else if (newestPending) {
+          activeOrderKey.current = getOrderKey(newestPending);
+          setActiveOrder(newestPending);
+        } else if (
+          newestConfirmed &&
+          !dismissedOrderIds.current.has(getOrderId(newestConfirmed))
+        ) {
+          activeOrderKey.current = getOrderKey(newestConfirmed);
+          setActiveOrder(newestConfirmed);
         }
       }
     } catch (error) {

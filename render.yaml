@@ -22,7 +22,7 @@ services:
       - key: PAYU_MODE
         value: "test"
       - key: UPI_ID
-        value: "9823555453@kotakbank"
+        value: ""
       - key: UPI_NAME
         value: "SmartPrint Kiosk"
       - key: DATABASE_URL

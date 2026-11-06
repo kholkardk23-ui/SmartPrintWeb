@@ -13,6 +13,7 @@ from sqlalchemy import (
     Boolean,
     Numeric,
     ForeignKey,
+    Text,
 )
 
 from sqlalchemy.orm import relationship
@@ -272,6 +273,16 @@ class Order(Base):
         order_by="OrderFile.file_order",
     )
 
+    # --------------------------------------------------------
+    # Payment transaction history
+    # --------------------------------------------------------
+    payment_transactions = relationship(
+        "PaymentTransaction",
+        back_populates="order",
+        cascade="all, delete-orphan",
+        order_by="PaymentTransaction.created_at.desc()",
+    )
+
     def __repr__(self) -> str:
         return (
             f"<Order("
@@ -500,5 +511,104 @@ class PrinterSession(Base):
             f"printer_id='{self.printer_id}', "
             f"file_id='{self.file_id}', "
             f"status='{self.status}'"
+            f")>"
+        )
+
+
+# ============================================================
+# PAYMENT TRANSACTION
+# ============================================================
+
+class PaymentTransaction(Base):
+    """
+    Payment transaction model.
+    Tracks each payment attempt with PayU or other gateways,
+    recording transaction ID (txnid), gateway reference (mihpayid),
+    amount, mode, status, and raw response payload.
+    """
+
+    __tablename__ = "payment_transactions"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    order_id = Column(
+        String(36),
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    txnid = Column(
+        String(100),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    mihpayid = Column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    amount = Column(
+        Numeric(10, 2),
+        nullable=False,
+    )
+
+    payment_gateway = Column(
+        String(50),
+        nullable=False,
+        default="PAYU",
+    )
+
+    payment_mode = Column(
+        String(50),
+        nullable=True,
+    )
+
+    payment_status = Column(
+        String(50),
+        nullable=False,
+        default="INITIATED",
+    )
+
+    gateway_response = Column(
+        Text,
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=utc_now,
+        nullable=False,
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    # Relationship to order
+    order = relationship(
+        "Order",
+        back_populates="payment_transactions",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PaymentTransaction("
+            f"id='{self.id}', "
+            f"order_id='{self.order_id}', "
+            f"txnid='{self.txnid}', "
+            f"mihpayid='{self.mihpayid}', "
+            f"amount={self.amount}, "
+            f"status='{self.payment_status}'"
             f")>"
         )
