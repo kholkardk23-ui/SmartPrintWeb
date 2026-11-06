@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import {
-  getOrders,
-  startPayment,
-  getPayUQR,
-  verifyPayment,
-  getPaymentStatus,
-} from "../services/api";
+import { getOrders } from "../services/api";
 import "./TabletDashboard.css";
 
 const REFRESH_INTERVAL = 3000;
@@ -285,6 +279,7 @@ function WelcomeScreen({ lastUpdated, connectionError }) {
 
 
 function OrderDetails({ order, onHome }) {
+  const isPaid = isOrderPaid(order);
   const fileNames = getFileNames(order);
 
   return (
@@ -299,19 +294,44 @@ function OrderDetails({ order, onHome }) {
           </div>
         </div>
 
-        <div className="tablet-order-badge" style={{ background: "#dcfce7", color: "#15803d", borderColor: "#86efac" }}>
-          ORDER CONFIRMED
+        <div
+          className="tablet-order-badge"
+          style={
+            isPaid
+              ? { background: "#dcfce7", color: "#15803d", borderColor: "#86efac" }
+              : { background: "#fef3c7", color: "#b45309", borderColor: "#fcd34d" }
+          }
+        >
+          {isPaid ? "ORDER CONFIRMED" : "PAYMENT PENDING"}
         </div>
       </header>
 
       <section className="tablet-order-content">
         <div className="tablet-order-heading">
-          <div className="tablet-success-icon">✓</div>
+          <div
+            className="tablet-success-icon"
+            style={
+              isPaid
+                ? { background: "#10b981", color: "#ffffff" }
+                : { background: "#f59e0b", color: "#ffffff" }
+            }
+          >
+            {isPaid ? "✓" : "⏳"}
+          </div>
 
           <div>
-            <span className="tablet-eyebrow">CONFIRMED PRINT ORDER</span>
+            <span
+              className="tablet-eyebrow"
+              style={!isPaid ? { color: "#b45309" } : undefined}
+            >
+              {isPaid ? "CONFIRMED PRINT ORDER" : "PRINT ORDER AWAITING PAYMENT"}
+            </span>
             <h2>{getOrderNumber(order)}</h2>
-            <p>Review the details of your confirmed print order below.</p>
+            <p>
+              {isPaid
+                ? "Payment verified. Review the details of your confirmed print order below."
+                : "Please complete payment on the customer website. This screen will update automatically once payment is verified."}
+            </p>
           </div>
         </div>
 
@@ -377,19 +397,33 @@ function OrderDetails({ order, onHome }) {
 
             <div className="tablet-setting-item">
               <span className="tablet-setting-label">Payment Status</span>
-              <strong className="tablet-status status-paid">
-                PAID
+              <strong
+                className={`tablet-status ${isPaid ? "status-paid" : "status-pending"}`}
+                style={
+                  !isPaid
+                    ? { background: "#fef3c7", color: "#b45309", border: "1px solid #fcd34d" }
+                    : undefined
+                }
+              >
+                {isPaid ? "PAID" : "PAYMENT PENDING"}
               </strong>
             </div>
 
             <div className="tablet-setting-item">
               <span className="tablet-setting-label">Order Status</span>
-              <strong className="tablet-status status-confirmed">
-                CONFIRMED
+              <strong
+                className={`tablet-status ${isPaid ? "status-confirmed" : "status-created"}`}
+                style={
+                  !isPaid
+                    ? { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }
+                    : undefined
+                }
+              >
+                {isPaid ? "CONFIRMED" : "AWAITING PAYMENT"}
               </strong>
             </div>
 
-            {order?.payment_reference && (
+            {isPaid && order?.payment_reference && (
               <div className="tablet-setting-item">
                 <span className="tablet-setting-label">Transaction Ref</span>
                 <strong style={{ fontFamily: "monospace", fontSize: "12px" }}>{order.payment_reference}</strong>
@@ -414,13 +448,16 @@ function OrderDetails({ order, onHome }) {
           </strong>
         </section>
 
-        <div className="tablet-order-message">
-          <span className="tablet-message-icon">ℹ️</span>
+        <div
+          className="tablet-order-message"
+          style={!isPaid ? { borderColor: "#fcd34d", background: "#fffbeb" } : undefined}
+        >
+          <span className="tablet-message-icon">{isPaid ? "ℹ️" : "⏳"}</span>
 
           <p>
-            Please follow the payment and printing instructions shown
-            by the SmartPrint system. Collect your documents when
-            printing is complete.
+            {isPaid
+              ? "Payment verified. Please collect your documents when printing is complete."
+              : "Please complete payment on the customer website. This tablet screen will update automatically once payment is verified."}
           </p>
         </div>
 
@@ -432,249 +469,6 @@ function OrderDetails({ order, onHome }) {
           ← HOME / READY FOR NEXT CUSTOMER
         </button>
       </section>
-
-      <footer className="tablet-footer">
-        <span>SmartPrint Self-Service Machine</span>
-        <span>{getOrderNumber(order)}</span>
-      </footer>
-    </main>
-  );
-}
-
-function TabletPaymentView({ order, onPaymentSuccess, onHome }) {
-  const [paymentData, setPaymentData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [verifying, setVerifying] = useState(false);
-  const [errorMessage, setErrorMessage] = useState(null);
-
-  const orderIdentifier = order?.order_id || order?.id || order?.order_number;
-  const pollingRef = useRef(null);
-
-  // Initialize payment details
-  useEffect(() => {
-    let active = true;
-
-    async function init() {
-      if (!orderIdentifier) return;
-      setLoading(true);
-      try {
-        // Fetch official PayU dynamic payment QR for this order
-        const data = await getPayUQR(orderIdentifier);
-        if (!active) return;
-        setPaymentData(data);
-        if (
-          data.payment_status === "PAID" ||
-          data.payment_status === "SUCCESS" ||
-          data.is_paid ||
-          data.status === "CONFIRMED" ||
-          data.status === "PAID" ||
-          data.status === "PRINTING" ||
-          data.status === "COMPLETED"
-        ) {
-          onPaymentSuccess({ ...order, ...data, status: "CONFIRMED", payment_status: "PAID" });
-        }
-      } catch (err) {
-        console.warn("PayU getPayUQR notice, trying startPayment:", err);
-        try {
-          const fallbackData = await startPayment(orderIdentifier);
-          if (active) setPaymentData(fallbackData);
-        } catch (e) {
-          console.error("Payment QR init error:", e);
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-
-    init();
-
-    return () => {
-      active = false;
-    };
-  }, [orderIdentifier, order, onPaymentSuccess]);
-
-  // Real-time polling to detect payment verification from phone
-  useEffect(() => {
-    if (!orderIdentifier) return;
-
-    pollingRef.current = setInterval(async () => {
-      try {
-        const statusRes = await getPaymentStatus(orderIdentifier);
-        if (
-          statusRes &&
-          (statusRes.is_paid ||
-            statusRes.status === "CONFIRMED" ||
-            statusRes.status === "PAID" ||
-            statusRes.status === "PRINTING" ||
-            statusRes.status === "COMPLETED" ||
-            statusRes.payment_status === "PAID" ||
-            statusRes.payment_status === "SUCCESS")
-        ) {
-          clearInterval(pollingRef.current);
-          onPaymentSuccess({ ...order, ...statusRes, status: "CONFIRMED", payment_status: "PAID" });
-        } else if (
-          statusRes &&
-          (statusRes.status === "FAILED" || statusRes.payment_status === "FAILED")
-        ) {
-          setErrorMessage("Payment failed or was declined at gateway. Please try again on your phone.");
-        } else if (
-          statusRes &&
-          (statusRes.status === "CANCELLED" || statusRes.payment_status === "CANCELLED")
-        ) {
-          setErrorMessage("Payment was cancelled. You may retry or return to the welcome screen.");
-        }
-      } catch (e) {
-        // silent polling error
-      }
-    }, 2000);
-
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  }, [orderIdentifier, order, onPaymentSuccess]);
-
-  // Demo simulation only available in demo mode
-  const isDemoMode = paymentData?.mode === "demo";
-  const handleSimulatePayment = async () => {
-    if (!isDemoMode || verifying || !orderIdentifier) return;
-    setVerifying(true);
-    setErrorMessage(null);
-    try {
-      const result = await verifyPayment(
-        orderIdentifier,
-        `DEMO-PAID-${Date.now()}`
-      );
-      if (pollingRef.current) clearInterval(pollingRef.current);
-      onPaymentSuccess({ ...order, ...result, status: "PRINTING" });
-    } catch (err) {
-      console.error("Simulation failed:", err);
-      setErrorMessage("Verification failed. Please try again.");
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  // Distinguish between actual UPI Intent URI (upi://...) and Hosted Checkout URL (https://...)
-  const isDirectUpiIntent =
-    Boolean(paymentData?.upi_uri && String(paymentData.upi_uri).startsWith("upi://")) ||
-    String(paymentData?.qr_data || "").startsWith("upi://");
-
-  const qrValue =
-    paymentData?.qr_data ||
-    paymentData?.upi_uri ||
-    paymentData?.checkout_url ||
-    "";
-
-  return (
-    <main className="tablet-dashboard tablet-upi-screen">
-      <header className="tablet-header">
-        <div className="tablet-brand">
-          <div className="tablet-brand-icon">🖨️</div>
-          <div>
-            <h1>SmartPrint</h1>
-            <p>Print Smart. Print Simple.</p>
-          </div>
-        </div>
-
-        <div className="tablet-order-badge tablet-payment-badge">
-          PAYU SECURE PAYMENT
-        </div>
-      </header>
-
-      <div className="tablet-upi-container">
-        {/* Amount Display */}
-        <div className="tablet-upi-amount-card">
-          <span className="tablet-upi-order-tag">Order: {getOrderNumber(order)}</span>
-          <h2 className="tablet-upi-amount-value">
-            Amount: {formatAmount(order?.total_amount)}
-          </h2>
-          <span className="tablet-upi-amount-label">
-            PayU India • {isDirectUpiIntent ? "Dynamic UPI QR (Direct App Intent)" : "Hosted Checkout Portal"}
-          </span>
-        </div>
-
-        {/* Scanner Card */}
-        <div className="tablet-upi-qr-card">
-          <div className="tablet-upi-qr-frame">
-            {loading || !qrValue ? (
-              <div style={{ padding: "40px", color: "var(--sp-muted)", fontSize: "14px" }}>
-                Generating PayU QR...
-              </div>
-            ) : (
-              <QRCodeSVG
-                value={qrValue}
-                size={210}
-                level="H"
-                includeMargin
-                imageSettings={{
-                  src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>',
-                  height: 28,
-                  width: 28,
-                  excavate: true,
-                }}
-              />
-            )}
-          </div>
-
-          <span className="tablet-upi-qr-prompt">
-            {isDirectUpiIntent
-              ? "Scan the QR code using your UPI application"
-              : "Scan with your phone camera to open PayU Hosted Checkout"}
-          </span>
-
-          <div className="tablet-upi-apps">
-            {(isDirectUpiIntent
-              ? ["Google Pay", "PhonePe", "Paytm", "BHIM UPI"]
-              : ["UPI", "Debit Card", "Credit Card", "Net Banking"]
-            ).map((app) => (
-              <span key={app} className="tablet-upi-app-pill">
-                {app}
-              </span>
-            ))}
-          </div>
-
-          {paymentData?.activation_required && (
-            <div style={{ marginTop: "12px", padding: "8px 12px", background: "#fef3c7", borderRadius: "10px", color: "#92400e", fontSize: "11px", textAlign: "left", maxWidth: "260px" }}>
-              <strong>Notice:</strong> PayU UPI Smart Intent S2S activation is pending on this merchant account. Showing PayU Hosted Checkout fallback QR.
-            </div>
-          )}
-        </div>
-
-        {/* Live Status Hint */}
-        <div className="tablet-upi-status-hint">
-          <span className="tablet-upi-pulse-dot" />
-          <span>Waiting for payment confirmation...</span>
-        </div>
-
-        {errorMessage && (
-          <div style={{ color: "#b91c1c", fontSize: "12px", fontWeight: "600", padding: "6px 12px", background: "#fee2e2", borderRadius: "8px" }}>
-            {errorMessage}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="tablet-upi-actions">
-          {isDemoMode && (
-            <button
-              type="button"
-              className="tablet-upi-simulate-btn"
-              onClick={handleSimulatePayment}
-              disabled={verifying}
-            >
-              {verifying ? "Verifying..." : "⚡ Demo Test: Simulate Payment"}
-            </button>
-          )}
-
-          <button
-            type="button"
-            className="tablet-upi-cancel-btn"
-            onClick={onHome}
-            disabled={verifying}
-          >
-            ← Cancel
-          </button>
-        </div>
-      </div>
 
       <footer className="tablet-footer">
         <span>SmartPrint Self-Service Machine</span>
@@ -700,13 +494,6 @@ export default function TabletDashboard() {
   useEffect(() => {
     activeOrderRef.current = activeOrder;
   }, [activeOrder]);
-
-  const handlePaymentSuccess = useCallback((paidOrder) => {
-    if (paidOrder) {
-      activeOrderKey.current = getOrderKey(paidOrder);
-      setActiveOrder(paidOrder);
-    }
-  }, []);
 
   const handleHome = useCallback(() => {
     if (activeOrderRef.current) {
@@ -944,16 +731,6 @@ export default function TabletDashboard() {
   }, [fetchOrders]);
 
   if (activeOrder) {
-    if (!isOrderPaid(activeOrder)) {
-      return (
-        <TabletPaymentView
-          order={activeOrder}
-          onPaymentSuccess={handlePaymentSuccess}
-          onHome={handleHome}
-        />
-      );
-    }
-
     return <OrderDetails order={activeOrder} onHome={handleHome} />;
   }
 
