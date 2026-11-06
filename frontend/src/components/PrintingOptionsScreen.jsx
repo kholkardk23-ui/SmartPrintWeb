@@ -1145,7 +1145,7 @@ export default function PrintingOptionsScreen({
             ) : (
               <>
                 <CreditCard className="w-5 h-5" />
-                <span>Proceed to Payment (₹{estimatedTotalPrice.toFixed(2)})</span>
+                <span>Proceed to Pay (₹{estimatedTotalPrice.toFixed(2)})</span>
                 <ArrowRight className="w-4 h-4 ml-0.5" />
               </>
             )}

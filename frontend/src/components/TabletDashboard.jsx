@@ -91,10 +91,21 @@ function formatAmount(amount) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+function parseOrderDate(dateValue) {
+  if (!dateValue) return 0;
+  let s = String(dateValue).trim();
+  if (s && !s.endsWith("Z") && !/[+-]\d{2}:\d{2}$/.test(s)) {
+    s += "Z";
+  }
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? (Date.parse(dateValue) || 0) : t;
+}
+
 function formatDate(dateValue) {
   if (!dateValue) return "Not available";
 
-  const date = new Date(dateValue);
+  const ms = parseOrderDate(dateValue);
+  const date = new Date(ms || dateValue);
 
   if (Number.isNaN(date.getTime())) {
     return String(dateValue);
@@ -581,8 +592,8 @@ export default function TabletDashboard() {
       // getOrders() normally sorts order_number descending, but sort by
       // creation time when available so the newest order is considered first.
       const sortedOrders = [...orders].sort((a, b) => {
-        const dateA = Date.parse(a?.created_at ?? "") || 0;
-        const dateB = Date.parse(b?.created_at ?? "") || 0;
+        const dateA = parseOrderDate(a?.created_at);
+        const dateB = parseOrderDate(b?.created_at);
 
         if (dateA && dateB && dateA !== dateB) return dateB - dateA;
 
@@ -604,7 +615,7 @@ export default function TabletDashboard() {
         if (["FAILED", "CANCELLED"].includes(status) || ["FAILED", "CANCELLED"].includes(paymentStatus)) {
           return false;
         }
-        return ["CREATED", "OPTIONS_SELECTED", "PAYMENT_PENDING"].includes(status);
+        return ["PAYMENT_PENDING", "CREATED", "OPTIONS_SELECTED"].includes(status);
       };
 
       const confirmedOrders = sortedOrders.filter(isOrderPaid);
@@ -612,40 +623,20 @@ export default function TabletDashboard() {
 
       // On first load, display latest active pending or confirmed paid order
       if (!initialized.current) {
-        sortedOrders.forEach((order) => {
-          seenOrderKeys.current.add(getOrderKey(order));
-        });
-
         initialized.current = true;
 
-        // Check if there is an active pending order created recently (< 15 min)
-        const targetPending = pendingOrders.find((o) => {
-          const createdAt = Date.parse(o?.created_at ?? "") || 0;
+        const latestOrder = sortedOrders.find((o) => {
+          const id = getOrderId(o);
           return (
-            createdAt &&
-            Date.now() - createdAt <= 15 * 60 * 1000 &&
-            !dismissedOrderIds.current.has(getOrderId(o)) &&
-            !dismissedOrderKeys.current.has(getOrderKey(o))
+            id &&
+            !dismissedOrderIds.current.has(id) &&
+            (isPendingOrder(o) || isOrderPaid(o))
           );
         });
 
-        if (targetPending) {
-          activeOrderKey.current = getOrderKey(targetPending);
-          setActiveOrder(targetPending);
-          return;
-        }
-
-        const targetConfirmed = confirmedOrders[0];
-        if (targetConfirmed) {
-          const targetId = getOrderId(targetConfirmed);
-          const targetKey = getOrderKey(targetConfirmed);
-          if (
-            !dismissedOrderIds.current.has(targetId) &&
-            !dismissedOrderKeys.current.has(targetKey)
-          ) {
-            activeOrderKey.current = targetKey;
-            setActiveOrder(targetConfirmed);
-          }
+        if (latestOrder) {
+          activeOrderKey.current = getOrderKey(latestOrder);
+          setActiveOrder(latestOrder);
         }
         return;
       }
@@ -686,8 +677,8 @@ export default function TabletDashboard() {
           getOrderId(newestConfirmed) !== activeId &&
           !dismissedOrderIds.current.has(getOrderId(newestConfirmed))
         ) {
-          const createdAtNew = Date.parse(newestConfirmed?.created_at ?? "") || 0;
-          const createdAtActive = Date.parse(activeOrderRef.current?.created_at ?? "") || 0;
+          const createdAtNew = parseOrderDate(newestConfirmed?.created_at);
+          const createdAtActive = parseOrderDate(activeOrderRef.current?.created_at);
           if (createdAtNew >= createdAtActive) {
             activeOrderKey.current = getOrderKey(newestConfirmed);
             setActiveOrder(newestConfirmed);
@@ -703,8 +694,8 @@ export default function TabletDashboard() {
             getOrderId(newestPending) !== activeId &&
             !dismissedOrderIds.current.has(getOrderId(newestPending))
           ) {
-            const createdAtPending = Date.parse(newestPending?.created_at ?? "") || 0;
-            const createdAtActive = Date.parse(activeOrderRef.current?.created_at ?? "") || 0;
+            const createdAtPending = parseOrderDate(newestPending?.created_at);
+            const createdAtActive = parseOrderDate(activeOrderRef.current?.created_at);
             if (createdAtPending > createdAtActive) {
               activeOrderKey.current = getOrderKey(newestPending);
               setActiveOrder(newestPending);
@@ -714,36 +705,32 @@ export default function TabletDashboard() {
         }
       } else {
         // On Welcome Screen:
-        // Priority 1: Check if a new customer created a pending order requiring payment QR
+        // Priority 1: Check if a customer created a pending order requiring payment
         const newestPending = pendingOrders.find((o) => {
-          const createdAt = Date.parse(o?.created_at ?? "") || 0;
-          return (
-            createdAt &&
-            Date.now() - createdAt <= 15 * 60 * 1000 &&
-            !dismissedOrderIds.current.has(getOrderId(o))
-          );
+          const id = getOrderId(o);
+          return id && !dismissedOrderIds.current.has(id);
         });
 
         // Priority 2: Check for newest confirmed paid order
-        const newestConfirmed = confirmedOrders[0];
+        const newestConfirmed = confirmedOrders.find((o) => {
+          const id = getOrderId(o);
+          return id && !dismissedOrderIds.current.has(id);
+        });
 
         if (newestPending && newestConfirmed) {
-          const datePending = Date.parse(newestPending?.created_at ?? "") || 0;
-          const dateConfirmed = Date.parse(newestConfirmed?.created_at ?? "") || 0;
+          const datePending = parseOrderDate(newestPending?.created_at);
+          const dateConfirmed = parseOrderDate(newestConfirmed?.created_at);
           if (datePending >= dateConfirmed) {
             activeOrderKey.current = getOrderKey(newestPending);
             setActiveOrder(newestPending);
-          } else if (!dismissedOrderIds.current.has(getOrderId(newestConfirmed))) {
+          } else {
             activeOrderKey.current = getOrderKey(newestConfirmed);
             setActiveOrder(newestConfirmed);
           }
         } else if (newestPending) {
           activeOrderKey.current = getOrderKey(newestPending);
           setActiveOrder(newestPending);
-        } else if (
-          newestConfirmed &&
-          !dismissedOrderIds.current.has(getOrderId(newestConfirmed))
-        ) {
+        } else if (newestConfirmed) {
           activeOrderKey.current = getOrderKey(newestConfirmed);
           setActiveOrder(newestConfirmed);
         }

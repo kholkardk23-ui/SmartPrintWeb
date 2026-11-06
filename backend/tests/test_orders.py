@@ -56,7 +56,7 @@ def test_order_bw_single_side_3pages(client, uploaded_3page_file):
     assert data["price_per_page"] == settings.BW_PRICE_PER_PAGE
     assert data["total_amount"] == 3 * 1 * settings.BW_PRICE_PER_PAGE
     assert data["currency"] == "INR"
-    assert data["status"] in ["CREATED", "OPTIONS_SELECTED"]
+    assert data["status"] in ["PAYMENT_PENDING", "CREATED", "OPTIONS_SELECTED"]
 
 
 # ==============================================================================
@@ -275,7 +275,7 @@ def test_get_existing_order(client, uploaded_3page_file):
     assert order_data["file_id"] == uploaded_3page_file["file_id"]
     assert order_data["filename"] == "assignment.pdf"
     assert order_data["total_amount"] == 3 * settings.BW_PRICE_PER_PAGE
-    assert order_data["status"] in ["CREATED", "OPTIONS_SELECTED"]
+    assert order_data["status"] in ["PAYMENT_PENDING", "CREATED", "OPTIONS_SELECTED"]
 
 
 # ==============================================================================

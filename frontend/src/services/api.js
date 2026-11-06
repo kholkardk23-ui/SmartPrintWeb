@@ -109,6 +109,21 @@ export const getOrder = async (orderId) => {
   return response.data;
 };
 
+// Get latest order
+export const getLatestOrder = async (confirmedOnly = false) => {
+  const url = confirmedOnly
+    ? "/api/orders/latest?confirmed_only=true"
+    : "/api/orders/latest";
+  const response = await api.get(url);
+  return response.data;
+};
+
+// Build PayU checkout redirect URL for order
+export const getPayUCheckoutUrl = (orderId) => {
+  const apiBase = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+  return `${apiBase}/api/payments/${orderId}/payu-checkout`;
+};
+
 // Update order status (e.g. PRINTING, COMPLETED)
 export const updateOrderStatus = async (orderId, status) => {
   const response = await api.patch(`/api/orders/${orderId}/status`, { status });
@@ -192,6 +207,8 @@ const apiService = {
   createOrder,
   getOrders,
   getOrder,
+  getLatestOrder,
+  getPayUCheckoutUrl,
   updateOrderStatus,
   healthCheck,
   checkHealth,

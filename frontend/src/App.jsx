@@ -5,10 +5,10 @@ import FileUploader from './components/FileUploader';
 import DocumentReadyCard from './components/DocumentReadyCard';
 import HowItWorksSection from './components/HowItWorksSection';
 import PrintingOptionsScreen from './components/PrintingOptionsScreen';
-import UPIPaymentScreen from './components/UPIPaymentScreen';
+import PayUPaymentScreen from './components/PayUPaymentScreen';
 import OrderSummaryCard from './components/OrderSummaryCard';
 import HowItWorksModal from './components/HowItWorksModal';
-import { uploadDocuments, checkHealth, getOrder } from './services/api';
+import { uploadDocuments, checkHealth, getOrder, getPayUCheckoutUrl } from './services/api';
 import { WifiOff, Users } from 'lucide-react';
 import TabletDashboard from "./components/TabletDashboard";
 
@@ -89,34 +89,64 @@ if (isTabletRoute) {
     });
   };
 
-  // Restore active order on page refresh to prevent duplicate orders
+  // Restore active order on page refresh or handle PayU callback return
   useEffect(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const urlOrderId = urlParams.get('order_id');
+      const urlPaymentStatus = (urlParams.get('payment_status') || '').toLowerCase();
+      const urlError = urlParams.get('error');
+
+      if (urlError) {
+        setErrorMessage(decodeURIComponent(urlError));
+      }
+
       const savedOrderId = urlOrderId || sessionStorage.getItem('smartprint_active_order_id');
-      const savedView = urlOrderId ? 'payment' : sessionStorage.getItem('smartprint_current_view');
-      if (savedOrderId && (savedView === 'payment' || savedView === 'order_summary')) {
-        getOrder(savedOrderId)
-          .then((order) => {
+      const savedView = urlOrderId
+        ? (urlPaymentStatus === 'success' ? 'order_summary' : 'payment')
+        : sessionStorage.getItem('smartprint_current_view');
+
+      if (savedOrderId) {
+        const fetchAndSet = async (attempts = 0) => {
+          try {
+            const order = await getOrder(savedOrderId);
             if (order) {
               setActiveOrder(order);
               const isPaid =
                 order.status === 'CONFIRMED' ||
                 order.status === 'PAID' ||
+                order.status === 'QUEUED' ||
+                order.status === 'PRINTING' ||
+                order.status === 'COMPLETED' ||
                 order.payment_status === 'PAID' ||
-                order.is_paid;
-              setCurrentView(isPaid ? 'order_summary' : savedView);
-              if (urlOrderId) {
+                order.payment_status === 'SUCCESS' ||
+                Boolean(order.is_paid);
+
+              if (isPaid || urlPaymentStatus === 'success') {
+                setCurrentView('order_summary');
+              } else if (savedView === 'payment' || savedView === 'order_summary') {
+                setCurrentView(savedView);
+              }
+
+              // If redirected with success but isPaid not yet committed, poll briefly
+              if (urlPaymentStatus === 'success' && !isPaid && attempts < 3) {
+                setTimeout(() => fetchAndSet(attempts + 1), 1000);
+              } else if (urlOrderId) {
                 window.history.replaceState({}, '', window.location.pathname);
               }
             }
-          })
-          .catch((err) => {
+          } catch (err) {
             console.error('Failed to restore active order:', err);
-            sessionStorage.removeItem('smartprint_active_order_id');
-            sessionStorage.removeItem('smartprint_current_view');
-          });
+            if (attempts < 2) {
+              setTimeout(() => fetchAndSet(attempts + 1), 1000);
+            } else {
+              sessionStorage.removeItem('smartprint_active_order_id');
+              sessionStorage.removeItem('smartprint_current_view');
+            }
+          }
+        };
+
+        fetchAndSet();
       }
     } catch (e) {
       // sessionStorage error handling
@@ -150,9 +180,14 @@ if (isTabletRoute) {
     setCurrentView('upload');
   };
 
-  // Called when an order is created successfully by PrintingOptionsScreen -> go to Dynamic UPI step
+  // Called when an order is created successfully by PrintingOptionsScreen -> show dedicated payment screen
   const handleOrderCreated = (order) => {
     setActiveOrder(order);
+    const orderId = order.id || order.order_id || order.order_number;
+    try {
+      sessionStorage.setItem('smartprint_active_order_id', orderId);
+      sessionStorage.setItem('smartprint_current_view', 'payment');
+    } catch (e) {}
     setCurrentView('payment');
   };
 
@@ -185,12 +220,14 @@ if (isTabletRoute) {
             order={activeOrder}
             onReset={handleReset}
             onBackToOptions={() => setCurrentView('options')}
-            onProceedToPayment={() => setCurrentView('payment')}
+            onProceedToPayment={() => {
+              const orderId = activeOrder.id || activeOrder.order_id || activeOrder.order_number;
+              window.location.href = getPayUCheckoutUrl(orderId);
+            }}
           />
         ) : currentView === 'payment' && activeOrder ? (
-          <UPIPaymentScreen
+          <PayUPaymentScreen
             order={activeOrder}
-            onPaymentSuccess={handlePaymentSuccess}
             onBackToOptions={() => setCurrentView('options')}
             onCancel={handleReset}
           />

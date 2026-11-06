@@ -155,6 +155,12 @@ def test_payu_checkout_session_creation(client, created_order):
     assert params["hash"] is not None
     assert len(params["hash"]) == 128  # SHA-512 hex is 128 characters
 
+    # Gateway-level UPI-only enforcement parameters
+    assert params["enforce_paymethod"] == "upi"
+    assert params["drop_category"] == "CC|DC|NB|EMI|CASH|BNPL|REWARD"
+    assert params["pg"] == "UPI"
+    assert params["bankcode"] == "UPI"
+
     # Security check: Never expose merchant salt in frontend response
     assert "salt" not in data
     assert "PAYU_MERCHANT_SALT" not in data
@@ -246,6 +252,77 @@ def test_payu_successful_payment_callback_and_verification(client, created_order
     assert db_order.payment_reference == mihpayid
     assert db_order.payment_session_id == txnid
     assert db_order.payment_timestamp is not None
+
+
+def test_payu_rejects_non_upi_payment_mode(client, created_order, db_session):
+    """
+    Test that if a payment is processed via Credit Card, Debit Card, Net Banking,
+    or other non-UPI mode, it is rejected under the UPI-only policy.
+    """
+    order_id = created_order["order_id"]
+    checkout_res = client.post(f"/api/payments/{order_id}/checkout")
+    assert checkout_res.status_code == 200
+    payu_params = checkout_res.json()["payu_params"]
+    txnid = payu_params["txnid"]
+    amount = payu_params["amount"]
+
+    mihpayid = "403993715526978999"
+    res_hash = generate_payu_response_hash(
+        status="success",
+        txnid=txnid,
+        amount=amount,
+        productinfo=payu_params["productinfo"],
+        firstname=payu_params["firstname"],
+        email=payu_params["email"],
+        udf1=payu_params["udf1"],
+        udf2=payu_params["udf2"],
+    )
+
+    callback_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": payu_params["productinfo"],
+        "firstname": payu_params["firstname"],
+        "email": payu_params["email"],
+        "udf1": payu_params["udf1"],
+        "udf2": payu_params["udf2"],
+        "mihpayid": mihpayid,
+        "bank_ref_num": "CC-AUTH-12345",
+        "mode": "CC",  # Non-UPI mode: Credit Card
+        "unmappedstatus": "captured",
+        "key": TEST_PAYU_KEY,
+        "hash": res_hash,
+    }
+
+    mock_verification_response = {
+        "status": 1,
+        "msg": "1 Transactions found",
+        "transaction_details": {
+            txnid: {
+                "mihpayid": mihpayid,
+                "status": "success",
+                "amt": amount,
+                "txnid": txnid,
+                "mode": "CC",
+            }
+        },
+    }
+
+    with mock_payu_service_post(mock_verification_response):
+        res = client.post(
+            "/api/payments/payu/response",
+            data=callback_data,
+            headers={"Accept": "application/json"},
+        )
+        assert res.status_code == 400
+        assert "only accepts UPI payments" in res.json()["detail"]
+
+    # Ensure order is NOT confirmed
+    db_order = db_session.query(Order).filter(Order.id == created_order["id"]).first()
+    assert db_order.status != OrderStatus.CONFIRMED.value
+    assert db_order.is_paid is not True
+    assert db_order.payment_status == "NON_UPI_REJECTED"
 
 
 def test_payu_failed_payment_callback(client, created_order, db_session):
@@ -788,6 +865,11 @@ def test_payu_checkout_redirect_endpoint(client, created_order, db_session):
     assert "Redirecting to PayU" in res.text
     assert "payuForm" in res.text
     assert created_order["order_number"] in res.text
+    # Verify gateway-level UPI restriction parameters are submitted in the HTML form
+    assert 'name="enforce_paymethod" value="upi"' in res.text
+    assert 'name="drop_category" value="CC|DC|NB|EMI|CASH|BNPL|REWARD"' in res.text
+    assert 'name="pg" value="UPI"' in res.text
+    assert 'name="bankcode" value="UPI"' in res.text
 
 
 def test_payu_production_mode_urls(monkeypatch):
@@ -1208,5 +1290,214 @@ def test_flow_2_tablet_qr_polling_verifies_payu_payment(client, created_order, d
     updated_order = db_session.query(Order).filter(Order.id == db_order.id).first()
     assert updated_order.is_paid is True
     assert updated_order.status in ("CONFIRMED", "PAID")
+
+
+def test_payu_end_to_end_customer_to_tablet_flow(client, db_session):
+    """
+    End-to-End Verification of Phase 6 Requirements:
+    1. Proceed to Pay creates a database order.
+    2. Newly created order has PAYMENT_PENDING status.
+    3. Tablet latest-order endpoint returns pending order.
+    4. PayU initialization uses the existing order ID.
+    5. Valid PayU success callback verifies payment.
+    6. Verified payment updates the same order to PAID/CONFIRMED.
+    7. Invalid hash cannot confirm payment.
+    8. Failed payment does not confirm order.
+    9. Duplicate callback does not duplicate orders.
+    10. Tablet displays confirmed order after polling.
+    """
+    # 1. Proceed to Pay creates a database order
+    pdf_bytes = create_mock_pdf_bytes(page_count=2)
+    upload_res = client.post(
+        "/api/files/upload",
+        files={"file": ("report.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+    )
+    assert upload_res.status_code == 201
+    file_id = upload_res.json()["file_id"]
+
+    order_payload = {
+        "file_ids": [file_id],
+        "copies": 1,
+        "color_mode": "bw",
+        "duplex": False,
+        "page_range": "all",
+    }
+    create_res = client.post("/api/orders", json=order_payload)
+    assert create_res.status_code == 201
+    order_data = create_res.json()
+    order_uuid = order_data["id"]
+    order_number = order_data["order_number"]
+
+    # 2. Newly created order has PAYMENT_PENDING status
+    assert order_data["status"] == "PAYMENT_PENDING"
+    assert order_data["payment_status"] == "PENDING"
+    assert order_data["is_paid"] is False
+
+    # 3. Tablet latest-order endpoint returns pending order immediately
+    tablet_latest = client.get("/api/orders/latest")
+    assert tablet_latest.status_code == 200
+    latest_data = tablet_latest.json()
+    assert latest_data["order_number"] == order_number
+    assert latest_data["status"] == "PAYMENT_PENDING"
+    assert latest_data["is_paid"] is False
+
+    # 4. PayU initialization uses the existing order ID
+    checkout_res = client.get(f"/api/payments/{order_number}/payu-checkout")
+    assert checkout_res.status_code == 200
+    assert "Redirecting to PayU" in checkout_res.text
+    assert f"Order {order_number}" in checkout_res.text
+
+    # Verify transaction was recorded for this exact order
+    db_order = db_session.query(Order).filter(Order.id == order_uuid).first()
+    assert db_order.payment_session_id is not None
+    txnid = db_order.payment_session_id
+    assert txnid.startswith("TXN-PAYU-")
+
+    amount = f"{float(order_data['total_amount']):.2f}"
+    productinfo = f"SmartPrint Order {order_number}"
+
+    # 7. Invalid hash cannot confirm payment
+    invalid_hash_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": productinfo,
+        "firstname": "Customer",
+        "email": "customer@smartprint.local",
+        "udf1": order_uuid,
+        "udf2": order_number,
+        "key": TEST_PAYU_KEY,
+        "hash": "tampered_bad_hash_signature",
+        "mihpayid": "MIH_TAMPERED",
+    }
+    bad_hash_res = client.post(
+        "/api/payments/payu/response",
+        data=invalid_hash_data,
+        headers={"Accept": "application/json"},
+    )
+    assert bad_hash_res.status_code == 400
+
+    db_session.expire_all()
+    check_order = db_session.query(Order).filter(Order.id == order_uuid).first()
+    assert check_order.is_paid is False
+    assert check_order.status == "PAYMENT_PENDING"
+
+    # 8. Failed payment does not confirm order
+    failed_hash = generate_payu_response_hash(
+        status="failure",
+        txnid=txnid,
+        amount=amount,
+        productinfo=productinfo,
+        firstname="Customer",
+        email="customer@smartprint.local",
+        udf1=order_uuid,
+        udf2=order_number,
+    )
+    failed_data = {
+        "status": "failure",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": productinfo,
+        "firstname": "Customer",
+        "email": "customer@smartprint.local",
+        "udf1": order_uuid,
+        "udf2": order_number,
+        "key": TEST_PAYU_KEY,
+        "hash": failed_hash,
+        "error_Message": "Bank declined transaction",
+    }
+    fail_res = client.post(
+        "/api/payments/payu/response",
+        data=failed_data,
+        headers={"Accept": "application/json"},
+    )
+    assert fail_res.status_code == 200
+    assert fail_res.json()["status"] == "failed"
+
+    db_session.expire_all()
+    check_order_fail = db_session.query(Order).filter(Order.id == order_uuid).first()
+    assert check_order_fail.is_paid is False
+    assert check_order_fail.status == "FAILED"
+
+    # Reset order back to PAYMENT_PENDING for success test (simulating customer retry)
+    check_order_fail.status = "PAYMENT_PENDING"
+    check_order_fail.payment_status = "PENDING"
+    db_session.commit()
+
+    # 5. Valid PayU success callback verifies payment
+    good_hash = generate_payu_response_hash(
+        status="success",
+        txnid=txnid,
+        amount=amount,
+        productinfo=productinfo,
+        firstname="Customer",
+        email="customer@smartprint.local",
+        udf1=order_uuid,
+        udf2=order_number,
+    )
+    success_data = {
+        "status": "success",
+        "txnid": txnid,
+        "amount": amount,
+        "productinfo": productinfo,
+        "firstname": "Customer",
+        "email": "customer@smartprint.local",
+        "udf1": order_uuid,
+        "udf2": order_number,
+        "key": TEST_PAYU_KEY,
+        "hash": good_hash,
+        "mihpayid": "MIH_PAYU_E2E_8888",
+        "bank_ref_num": "BANK_REF_8888",
+    }
+    mock_verify = {
+        "verified": True,
+        "status": "success",
+        "transaction": {"status": "success", "amt": amount},
+        "mihpayid": "MIH_PAYU_E2E_8888",
+        "bank_ref_num": "BANK_REF_8888",
+        "amount": amount,
+        "mode": "UPI",
+    }
+
+    with patch.object(payu_service, "verify_payment_with_payu", return_value=mock_verify):
+        success_res = client.post(
+            "/api/payments/payu/response",
+            data=success_data,
+            headers={"Accept": "application/json"},
+        )
+        assert success_res.status_code == 200
+        assert success_res.json()["status"] == "success"
+        assert success_res.json()["payment_status"] == "PAID"
+
+    # 6. Verified payment updates the same order to PAID/CONFIRMED
+    db_session.expire_all()
+    confirmed_order = db_session.query(Order).filter(Order.id == order_uuid).first()
+    assert confirmed_order.is_paid is True
+    assert confirmed_order.status in ("CONFIRMED", "PAID")
+    assert confirmed_order.payment_reference == "MIH_PAYU_E2E_8888"
+
+    # 9. Duplicate callback does not duplicate orders
+    order_count_before = db_session.query(Order).count()
+    with patch.object(payu_service, "verify_payment_with_payu", return_value=mock_verify):
+        dup_res = client.post(
+            "/api/payments/payu/response",
+            data=success_data,
+            headers={"Accept": "application/json"},
+        )
+        assert dup_res.status_code == 200
+        assert dup_res.json()["status"] == "success"
+
+    db_session.expire_all()
+    order_count_after = db_session.query(Order).count()
+    assert order_count_before == order_count_after
+
+    # 10. Tablet displays confirmed order after polling
+    tablet_poll = client.get("/api/orders/latest?confirmed_only=true")
+    assert tablet_poll.status_code == 200
+    tablet_order = tablet_poll.json()
+    assert tablet_order["order_number"] == order_number
+    assert tablet_order["status"] in ("CONFIRMED", "PAID")
+    assert tablet_order["is_paid"] is True
+    assert tablet_order["payment_reference"] == "MIH_PAYU_E2E_8888"
 
 

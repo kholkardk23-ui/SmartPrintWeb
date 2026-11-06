@@ -1372,6 +1372,33 @@ async def payu_response(request: Request, db: Session = Depends(get_db)):
         except ValueError:
             pass
 
+    # Confirm verified payment mode is strictly UPI
+    mode_raw = str(data.get("mode") or verification.get("mode") or "").strip().upper()
+    if mode_raw and not (mode_raw.startswith("UPI") or mode_raw in ("INTENT", "COLLECT", "QR")):
+        logger.error(
+            "Rejected non-UPI payment mode '%s' for order %s (UPI-only enforced)",
+            mode_raw, order.order_number,
+        )
+        order.status = OrderStatus.FAILED.value
+        order.payment_status = "NON_UPI_REJECTED"
+        db.commit()
+        if txnid:
+            record_payment_transaction(
+                db=db,
+                order=order,
+                txnid=txnid,
+                amount=float(order.total_amount),
+                mihpayid=mihpayid or None,
+                payment_gateway="PAYU",
+                payment_status="NON_UPI_REJECTED",
+                payment_mode=mode_raw,
+                gateway_response=data,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment mode '{mode_raw}' is not accepted. SmartPrint only accepts UPI payments.",
+        )
+
     # STEP 9: Only verified successful payments are marked PAID
     ref = mihpayid or bank_ref or verification.get("mihpayid") or f"PAYU-{txnid}"
     confirmed_status = mark_paid(
@@ -1444,6 +1471,13 @@ def payu_checkout_redirect(order_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
 
     if not settings.payu_configured:
+        if settings.effective_payment_provider == "demo":
+            ref = f"DEMO-{order.order_number or order.id[:8]}-{uuid.uuid4().hex[:6].upper()}"
+            mark_paid(db, order, reference=ref)
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/?order_id={order.id}&payment_status=success",
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="PayU payment gateway is not configured on this server.",
@@ -1453,6 +1487,9 @@ def payu_checkout_redirect(order_id: str, db: Session = Depends(get_db)):
     payload = payu_service.prepare_payment_payload(order)
     txnid = payload.get("txnid")
     if txnid:
+        order.payment_session_id = txnid
+        db.commit()
+        db.refresh(order)
         record_payment_transaction(
             db=db,
             order=order,
@@ -1472,7 +1509,7 @@ def payu_checkout_redirect(order_id: str, db: Session = Depends(get_db)):
     html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>SmartPrint - Redirecting to PayU</title>
+    <title>SmartPrint - Redirecting to PayU UPI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; color: #1e293b; text-align: center; }}
@@ -1488,10 +1525,10 @@ def payu_checkout_redirect(order_id: str, db: Session = Depends(get_db)):
 <body onload="document.getElementById('payuForm').submit();">
     <div class="card">
         <div class="spinner"></div>
-        <h2>Redirecting to PayU</h2>
+        <h2>Redirecting to PayU UPI</h2>
         <p>Order {order.order_number or order.id}</p>
         <div class="amount">₹{float(order.total_amount):.2f}</div>
-        <p>Connecting to secure payment gateway...</p>
+        <p>Connecting to secure UPI payment gateway...</p>
         <form id="payuForm" method="POST" action="{action}">
             {inputs}
             <noscript><button type="submit">Click here to continue to PayU</button></noscript>

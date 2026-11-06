@@ -173,6 +173,10 @@ def build_order_response(
     )
     resolved_payment_status = "PAID" if is_paid else (stored_payment_status or "PENDING")
 
+    created_at = order.created_at
+    if created_at and created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+
     return OrderResponse(
         id=order.id,
         order_id=order.order_number,
@@ -195,7 +199,7 @@ def build_order_response(
         payment_reference=getattr(order, "payment_reference", None),
         payment_timestamp=getattr(order, "payment_timestamp", None),
         is_paid=is_paid,
-        created_at=order.created_at,
+        created_at=created_at,
     )
 
 
@@ -357,6 +361,10 @@ def create_order(
                     "Reusing existing pending order %s to prevent duplicate order",
                     candidate.order_number or candidate.id,
                 )
+                if normalize_status(candidate.status) != OrderStatus.PAYMENT_PENDING.value:
+                    candidate.status = OrderStatus.PAYMENT_PENDING.value
+                    db.commit()
+                    db.refresh(candidate)
                 return build_order_response(candidate, db)
 
         # 4. Generate IDs and customer-facing order number
@@ -378,7 +386,7 @@ def create_order(
             price_per_page=price_per_page,
             total_amount=round(total_amount, 2),
             currency=currency,
-            status=OrderStatus.CREATED.value,
+            status=OrderStatus.PAYMENT_PENDING.value,
             payment_status="PENDING",
         )
 
@@ -465,7 +473,7 @@ def get_latest_order(
                 | (Order.payment_status.in_(["PAID", "SUCCESS"]))
             )
 
-        order = query.order_by(Order.order_number.desc()).first()
+        order = query.order_by(Order.created_at.desc(), Order.order_number.desc()).first()
 
         if not order:
             raise HTTPException(
@@ -502,7 +510,7 @@ def get_all_orders(
         orders = (
             db.query(Order)
             .filter(Order.order_number.isnot(None))
-            .order_by(Order.order_number.desc())
+            .order_by(Order.created_at.desc(), Order.order_number.desc())
             .all()
         )
 

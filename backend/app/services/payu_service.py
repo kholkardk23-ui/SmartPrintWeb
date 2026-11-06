@@ -96,6 +96,8 @@ def get_payu_payment_url() -> str:
     """Return the authoritative PayU S2S payment endpoint."""
     if is_production_mode():
         return PAYU_PROD_PAYMENT_URL
+    if (settings.PAYU_PAYMENT_URL or "").strip():
+        return settings.PAYU_PAYMENT_URL.strip()
     return PAYU_TEST_PAYMENT_URL
 
 
@@ -103,6 +105,8 @@ def get_payu_verify_url() -> str:
     """Return the authoritative PayU Postservice transaction verification endpoint."""
     if is_production_mode():
         return PAYU_PROD_VERIFY_URL
+    if (settings.PAYU_VERIFY_URL or "").strip():
+        return settings.PAYU_VERIFY_URL.strip()
     return PAYU_TEST_VERIFY_URL
 
 
@@ -432,6 +436,11 @@ def prepare_payment_payload(order, txnid: Optional[str] = None) -> Dict[str, Any
         "udf4": udf4,
         "udf5": udf5,
         "hash": req_hash,
+        "pg": "UPI",
+        "bankcode": "UPI",
+        "default_paymethod": "upi",
+        "enforce_paymethod": "upi",
+        "drop_category": "CC|DC|NB|EMI|CASH|BNPL|REWARD",
     }
 
 
@@ -537,12 +546,18 @@ def verify_payment_with_payu(txnid: str) -> Dict[str, Any]:
     status_code = data.get("status")
     txn_details = data.get("transaction_details", {})
     txn_data = txn_details.get(txnid) or {}
+    if not txn_data and isinstance(txn_details, dict):
+        clean_target = str(txnid).strip().lower()
+        for k, v in txn_details.items():
+            if str(k).strip().lower() == clean_target:
+                txn_data = v
+                break
 
     txn_status = str(txn_data.get("status") or "").lower()
     unmapped_status = str(txn_data.get("unmappedstatus") or "").lower()
 
     is_success = (
-        status_code == 1
+        str(status_code) in ("1", "success")
         and (txn_status in ("success", "captured") or unmapped_status in ("captured", "success"))
     )
 
