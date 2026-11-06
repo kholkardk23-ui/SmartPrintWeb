@@ -9,7 +9,6 @@ import {
   Printer,
   CreditCard,
   RotateCcw,
-  Sparkles,
   Clock,
   ShieldCheck,
   ArrowLeft,

@@ -4,10 +4,6 @@ import {
   CheckCircle2,
   Sparkles,
   RotateCcw,
-  FileText,
-  Layers,
-  ArrowRight,
-  ShieldCheck,
   Check,
 } from 'lucide-react';
 import { updateOrderStatus } from '../services/api';

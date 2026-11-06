@@ -76,8 +76,6 @@ export const uploadDocuments = async (files, onProgress = null) => {
 
 // Create order
 export const createOrder = async (orderData) => {
-  console.log("Sending order data:", orderData);
-
   const response = await api.post("/api/orders", orderData);
 
   return response.data;

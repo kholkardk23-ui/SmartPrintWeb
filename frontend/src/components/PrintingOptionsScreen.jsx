@@ -12,7 +12,6 @@ import {
   Info,
   RotateCcw,
   ArrowRight,
-  QrCode,
   CreditCard,
 } from 'lucide-react';
 
@@ -467,12 +466,6 @@ export default function PrintingOptionsScreen({
        * Backend remains authoritative for final pricing.
        */
       const order = await createOrder(payload);
-
-console.log("========== ORDER RESPONSE ==========");
-console.log(order);
-console.log("Price per page:", order?.price_per_page);
-console.log("Total amount:", order?.total_amount);
-console.log("====================================");
 
       if (onOrderCreated) {
         onOrderCreated(order);

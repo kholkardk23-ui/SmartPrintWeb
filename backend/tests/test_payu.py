@@ -26,13 +26,17 @@ from app.models import Order, OrderStatus, PaymentTransaction
 from app.services import payu_service
 
 
+TEST_PAYU_KEY = "MOCK_PAYU_KEY"
+TEST_PAYU_SALT = "mock_payu_test_salt_secret_32bytes"
+
+
 @pytest.fixture(autouse=True)
 def force_payu_provider(monkeypatch):
     """Ensure PayU is the active payment provider for this test suite."""
     monkeypatch.setattr(settings, "PAYMENT_PROVIDER", "payu")
     monkeypatch.setattr(settings, "PAYU_MODE", "test")
-    monkeypatch.setattr(settings, "PAYU_MERCHANT_KEY", "TH9CFX")
-    monkeypatch.setattr(settings, "PAYU_MERCHANT_SALT", "7a4erhRW6vODP5j7tqa8xQJ3cFpCk40q")
+    monkeypatch.setattr(settings, "PAYU_MERCHANT_KEY", TEST_PAYU_KEY)
+    monkeypatch.setattr(settings, "PAYU_MERCHANT_SALT", TEST_PAYU_SALT)
     monkeypatch.setattr(settings, "PAYU_PAYMENT_URL", "https://test.payu.in/_payment")
     monkeypatch.setattr(settings, "PAYU_VERIFY_URL", "https://test.payu.in/merchant/postservice.php?form=2")
     monkeypatch.setattr(settings, "PAYU_SUCCESS_URL", "http://localhost:8000/api/payments/payu/response")
@@ -86,8 +90,8 @@ def generate_payu_response_hash(
     udf4: str = "",
     udf5: str = "",
     additional_charges: str = "",
-    salt: str = "7a4erhRW6vODP5j7tqa8xQJ3cFpCk40q",
-    key: str = "TH9CFX",
+    salt: str = TEST_PAYU_SALT,
+    key: str = TEST_PAYU_KEY,
 ) -> str:
     """Helper to generate a valid PayU reverse response hash."""
     if additional_charges:
@@ -116,6 +120,17 @@ def mock_payu_service_post(mock_data):
     return patch("app.services.payu_service.httpx.Client", return_value=mock_client)
 
 
+MOCK_PAYU_INTENT_RESPONSE = {
+    "status": 1,
+    "result": {
+        "intentURIData": "upi://pay?pa=smartprint@payu&pn=SmartPrint&tr=TXN-PAYU-TEST&am=18.00&cu=INR",
+        "merchantVpa": "smartprint@payu",
+        "merchantName": "SmartPrint",
+        "paymentId": "MOCK-PAYU-PID-12345",
+    },
+}
+
+
 def test_payu_checkout_session_creation(client, created_order):
     """Test creating a PayU Hosted Checkout session for an order."""
     order_id = created_order["order_id"]
@@ -131,7 +146,7 @@ def test_payu_checkout_session_creation(client, created_order):
 
     params = data.get("payu_params")
     assert params is not None
-    assert params["key"] == "TH9CFX"
+    assert params["key"] == TEST_PAYU_KEY
     assert params["txnid"] == data["payment_session_id"]
     assert float(params["amount"]) == pytest.approx(float(created_order["total_amount"]))
     assert params["udf1"] == created_order["id"]
@@ -188,7 +203,7 @@ def test_payu_successful_payment_callback_and_verification(client, created_order
         "bank_ref_num": bank_ref,
         "mode": "UPI",
         "unmappedstatus": "captured",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
 
@@ -265,7 +280,7 @@ def test_payu_failed_payment_callback(client, created_order, db_session):
         "mode": "UPI",
         "unmappedstatus": "failed",
         "error_Message": "Bank declined payment",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
 
@@ -318,7 +333,7 @@ def test_payu_cancelled_payment_callback(client, created_order, db_session):
         "mode": "UPI",
         "unmappedstatus": "userCancelled",
         "error_Message": "Transaction cancelled by user",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
 
@@ -358,7 +373,7 @@ def test_payu_invalid_hash_rejected(client, created_order, db_session):
         "udf1": payu_params["udf1"],
         "udf2": payu_params["udf2"],
         "mihpayid": "403993715526978999",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": fake_hash,
     }
 
@@ -406,7 +421,7 @@ def test_payu_failed_independent_verification_rejects_payment(client, created_or
         "udf1": payu_params["udf1"],
         "udf2": payu_params["udf2"],
         "mihpayid": "403993715526978130",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
 
@@ -458,7 +473,7 @@ def test_payu_duplicate_callback_idempotency(client, created_order, db_session):
         "udf1": payu_params["udf1"],
         "udf2": payu_params["udf2"],
         "mihpayid": mihpayid,
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
 
@@ -554,7 +569,7 @@ def test_payu_confirmed_order_appears_on_tablet_dashboard(client, created_order,
         "udf1": payu_params["udf1"],
         "udf2": payu_params["udf2"],
         "mihpayid": mihpayid,
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
 
@@ -684,7 +699,7 @@ def test_payu_amount_mismatch_rejected(client, created_order, db_session):
         "udf1": payu_params["udf1"],
         "udf2": payu_params["udf2"],
         "mihpayid": "403993715526978130",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
 
@@ -738,7 +753,7 @@ def test_payment_transaction_table_recording(client, created_order, db_session):
         "udf2": payu_params["udf2"],
         "mihpayid": mihpayid,
         "mode": "UPI",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
     }
     mock_verification = {
@@ -785,7 +800,8 @@ def test_payu_production_mode_urls(monkeypatch):
 def test_payu_smart_intent_checkout(client, created_order):
     """Test creating a PayU Smart Intent checkout session with all 5 UPI app options."""
     order_id = created_order["order_id"]
-    res = client.post(f"/api/payments/{order_id}/checkout?provider=payu")
+    with mock_payu_service_post(MOCK_PAYU_INTENT_RESPONSE):
+        res = client.post(f"/api/payments/{order_id}/checkout?provider=payu")
     assert res.status_code == 200
     data = res.json()
 
@@ -845,15 +861,16 @@ def test_payu_specific_app_intent_endpoint(client, created_order):
     """Test POST /{order_id}/payu-intent endpoint for specific apps."""
     order_id = created_order["order_id"]
 
-    for app in ("phonepe", "googlepay", "paytm", "bhim", "genericintent"):
-        res = client.post(f"/api/payments/{order_id}/payu-intent?app={app}")
-        assert res.status_code == 200
-        intent = res.json()
-        assert intent["success"] is True
-        assert intent["selected_app"] == app
-        assert intent["intent_uri_data"] is not None
-        assert intent["universal_upi_uri"].startswith("upi://pay?")
-        assert app in intent["apps"]
+    with mock_payu_service_post(MOCK_PAYU_INTENT_RESPONSE):
+        for app in ("phonepe", "googlepay", "paytm", "bhim", "genericintent"):
+            res = client.post(f"/api/payments/{order_id}/payu-intent?app={app}")
+            assert res.status_code == 200
+            intent = res.json()
+            assert intent["success"] is True
+            assert intent["selected_app"] == app
+            assert intent["intent_uri_data"] is not None
+            assert intent["universal_upi_uri"].startswith("upi://pay?")
+            assert app in intent["apps"]
 
 
 def test_payu_tablet_qr_endpoint(client, created_order):
@@ -929,7 +946,7 @@ def test_pending_and_failed_payment_does_not_mark_order_paid(client, created_ord
         "email": checkout_res.json()["payu_params"]["email"],
         "udf1": checkout_res.json()["payu_params"]["udf1"],
         "udf2": checkout_res.json()["payu_params"]["udf2"],
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
         "error_Message": "Bank declined transaction",
     }
@@ -999,7 +1016,8 @@ def test_flow_2_tablet_qr_payment_success(client, created_order, db_session):
     assert db_order is not None
 
     # Step 2: Tablet calls /{order_id}/qr to display payment QR
-    qr_res = client.post(f"/api/payments/{order_id}/qr")
+    with mock_payu_service_post(MOCK_PAYU_INTENT_RESPONSE):
+        qr_res = client.post(f"/api/payments/{order_id}/qr")
     assert qr_res.status_code == 200
     qr_data = qr_res.json()
 
@@ -1041,7 +1059,7 @@ def test_flow_2_tablet_qr_payment_success(client, created_order, db_session):
         "email": "customer@smartprint.local",
         "udf1": str(db_order.id),
         "udf2": str(db_order.order_number),
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
         "mihpayid": "PAYU_TAB_MIH_9999",
         "bank_ref_num": "BANK_TAB_REF_8888",
@@ -1128,7 +1146,7 @@ def test_flow_2_tablet_qr_order_matching_by_txnid_alone(client, created_order, d
         "email": "customer@smartprint.local",
         "udf1": "",
         "udf2": "",
-        "key": "TH9CFX",
+        "key": TEST_PAYU_KEY,
         "hash": res_hash,
         "mihpayid": "PAYU_NO_UDF_9999",
     }

@@ -15,11 +15,18 @@ env.bak/
 venv.bak/
 backend/venv/
 
-# Database
+# Database & SQL Dumps
 *.db
 *.sqlite3
 backend/smartprint.db
 backend/mysql_data/
+smartprint_*.sql
+*.sql
+
+# Private User Data & Spreadsheets
+Amount Spending.xlsx
+*.xlsx
+*.xls
 
 # Uploaded files (keep .gitkeep)
 uploads/
@@ -32,7 +39,9 @@ backend/uploads/*
 htmlcov/
 
 # Node & Frontend
+node_modules/
 frontend/node_modules/
+dist/
 frontend/dist/
 frontend/.env.local
 frontend/.env.*.local

@@ -4,9 +4,60 @@ import { getOrders } from "../services/api";
 import "./TabletDashboard.css";
 
 const REFRESH_INTERVAL = 3000;
-const CUSTOMER_WEBSITE_URL =
-  import.meta.env.VITE_CUSTOMER_WEBSITE_URL ||
-  "https://smart-print-web-orpin.vercel.app/";
+const DEFAULT_CUSTOMER_WEBSITE_URL = "https://smart-print-web-gules.vercel.app/";
+
+function sanitizeCustomerWebsiteUrl(rawUrl) {
+  let url = (rawUrl || "").trim();
+  if (!url) return DEFAULT_CUSTOMER_WEBSITE_URL;
+
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+
+    // Prevent pointing to localhost, backend API, or outdated deployments
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.includes("onrender.com") ||
+      host.includes("smart-print-web-orpin")
+    ) {
+      return DEFAULT_CUSTOMER_WEBSITE_URL;
+    }
+
+    // Strip /tablet if accidentally included
+    if (parsed.pathname === "/tablet" || parsed.pathname === "/tablet/") {
+      parsed.pathname = "/";
+    } else if (parsed.pathname.endsWith("/tablet")) {
+      parsed.pathname = parsed.pathname.replace(/\/tablet$/, "/");
+    }
+
+    return parsed.toString();
+  } catch {
+    return DEFAULT_CUSTOMER_WEBSITE_URL;
+  }
+}
+
+function resolveCustomerWebsiteUrl() {
+  const envUrl = import.meta.env.VITE_CUSTOMER_WEBSITE_URL;
+  if (envUrl && typeof envUrl === "string" && envUrl.trim() !== "") {
+    return sanitizeCustomerWebsiteUrl(envUrl);
+  }
+
+  if (typeof window !== "undefined" && window.location?.origin) {
+    const origin = window.location.origin;
+    if (!origin.includes("localhost") && !origin.includes("127.0.0.1")) {
+      return sanitizeCustomerWebsiteUrl(origin);
+    }
+  }
+
+  return DEFAULT_CUSTOMER_WEBSITE_URL;
+}
+
+const CUSTOMER_WEBSITE_URL = resolveCustomerWebsiteUrl();
 
 function getOrderKey(order) {
   const id = order?.id || order?.order_number || order?.order_id || "order";

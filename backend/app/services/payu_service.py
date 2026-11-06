@@ -21,7 +21,6 @@ Handles:
 import hashlib
 import hmac
 import logging
-import urllib.parse
 import uuid
 from typing import Any, Dict, Optional
 
